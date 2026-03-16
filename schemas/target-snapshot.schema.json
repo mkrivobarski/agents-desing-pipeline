@@ -1,0 +1,93 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "target-snapshot.schema.json",
+  "title": "Target Snapshot",
+  "description": "Before-state capture of each targeted Figma node, with inferred change deltas and agent routing plan. Produced by targeted-intake-agent.",
+  "type": "object",
+  "required": ["meta", "snapshots"],
+  "additionalProperties": false,
+  "properties": {
+    "meta": {
+      "type": "object",
+      "required": ["captured_at", "total_targets"],
+      "additionalProperties": false,
+      "properties": {
+        "captured_at": { "type": "string", "format": "date-time" },
+        "total_targets": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "snapshots": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["node_id", "node_name", "node_type", "page_name", "scope", "properties", "instruction", "intent", "inferred_changes", "agents_required", "patch_mode"],
+        "additionalProperties": false,
+        "properties": {
+          "node_id": { "type": "string" },
+          "node_name": { "type": "string" },
+          "node_type": { "type": "string" },
+          "page_name": { "type": "string" },
+          "scope": { "type": "string", "enum": ["frame", "component", "instance", "element"] },
+          "before_screenshot_url": { "type": ["string", "null"] },
+          "properties": {
+            "type": "object",
+            "description": "Raw Figma node properties extracted at snapshot time",
+            "properties": {
+              "fills": { "type": "array" },
+              "strokes": { "type": "array" },
+              "cornerRadius": { "type": ["number", "string", "null"] },
+              "opacity": { "type": "number" },
+              "padding": {
+                "type": "object",
+                "properties": {
+                  "left": { "type": "number" }, "right": { "type": "number" },
+                  "top": { "type": "number" },  "bottom": { "type": "number" }
+                }
+              },
+              "itemSpacing": { "type": "number" },
+              "layoutMode": { "type": "string" },
+              "width": { "type": "number" },
+              "height": { "type": "number" },
+              "fontSize": { "type": ["number", "string"] },
+              "variantProperties": { "type": "object" },
+              "componentProperties": { "type": "object" },
+              "variantGroupProperties": { "type": "object" },
+              "componentId": { "type": ["string", "null"] },
+              "children": { "type": "array" }
+            }
+          },
+          "instruction": { "type": "string", "minLength": 1 },
+          "intent": { "type": "string", "enum": ["iterate", "redesign", "fix", "review"] },
+          "constraints": { "type": ["string", "null"] },
+          "inferred_changes": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "required": ["property", "intent"],
+              "additionalProperties": false,
+              "properties": {
+                "property": {
+                  "type": "string",
+                  "enum": ["fills", "padding", "typography", "variants", "layout", "content", "strokes", "opacity", "spacing"]
+                },
+                "intent": { "type": "string" },
+                "state": { "type": ["string", "null"], "description": "For variant/add_state changes, the state name (e.g. 'Loading')" }
+              }
+            }
+          },
+          "agents_required": {
+            "type": "array",
+            "minItems": 2,
+            "items": { "type": "string" },
+            "description": "Ordered list of pipeline agents to invoke for this target"
+          },
+          "patch_mode": {
+            "type": "boolean",
+            "description": "If true, downstream agents read existing outputs and apply targeted changes only"
+          }
+        }
+      }
+    }
+  }
+}

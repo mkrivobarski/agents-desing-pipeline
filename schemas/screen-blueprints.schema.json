@@ -1,0 +1,157 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "screen-blueprints.schema.json",
+  "title": "Screen Blueprints",
+  "description": "Structural screen layout specifications produced by the wireframe-strategist agent. Pure structure — no visual properties.",
+  "type": "object",
+  "required": ["meta", "blueprints"],
+  "additionalProperties": false,
+  "properties": {
+    "meta": {
+      "type": "object",
+      "required": ["generated_from", "generated_at", "total_screens", "total_blueprints"],
+      "additionalProperties": false,
+      "properties": {
+        "generated_from": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "generated_at": { "type": "string", "format": "date-time" },
+        "total_screens": { "type": "integer", "minimum": 0 },
+        "total_blueprints": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "blueprints": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["screen_id", "screen_name", "platform", "layout_pattern", "primary_focal_point", "reading_order", "states", "navigation_controls"],
+        "additionalProperties": false,
+        "properties": {
+          "screen_id": { "type": "string" },
+          "screen_name": { "type": "string" },
+          "platform": {
+            "type": "array",
+            "items": { "type": "string", "enum": ["web", "ios", "android", "desktop"] }
+          },
+          "layout_pattern": {
+            "type": "string",
+            "enum": ["single_column", "two_column", "bottom_tabs", "top_tabs", "drawer", "split_view", "modal", "full_bleed"]
+          },
+          "primary_focal_point": { "type": "string", "description": "slot_id of the most important element" },
+          "reading_order": {
+            "type": "string",
+            "enum": ["f_pattern", "z_pattern", "linear", "hub_spoke"]
+          },
+          "states": {
+            "type": "object",
+            "required": ["default"],
+            "additionalProperties": false,
+            "properties": {
+              "default": { "$ref": "#/definitions/screenState" },
+              "loading": { "$ref": "#/definitions/screenState" },
+              "error": { "$ref": "#/definitions/screenState" },
+              "empty": { "$ref": "#/definitions/screenState" },
+              "success": { "$ref": "#/definitions/screenState" }
+            }
+          },
+          "navigation_controls": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "back_button": { "type": "boolean" },
+              "close_button": { "type": "boolean" },
+              "tab_bar": { "type": "boolean" },
+              "drawer_trigger": { "type": "boolean" }
+            }
+          },
+          "accessibility_notes": { "type": "string" },
+          "blueprint_notes": { "type": "string" }
+        }
+      }
+    },
+    "strategist_notes": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  },
+  "definitions": {
+    "screenState": {
+      "type": "object",
+      "required": ["zones"],
+      "additionalProperties": false,
+      "properties": {
+        "zones": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["zone_id", "is_fixed", "is_scrollable", "above_fold", "slots"],
+            "additionalProperties": false,
+            "properties": {
+              "zone_id": {
+                "type": "string",
+                "enum": ["header", "subheader", "hero", "content", "sidebar", "footer", "overlay", "toast_area"]
+              },
+              "is_fixed": { "type": "boolean" },
+              "is_scrollable": { "type": "boolean" },
+              "above_fold": { "type": "boolean" },
+              "loading_strategy": {
+                "type": "string",
+                "enum": ["skeleton", "spinner", "shimmer", "none"]
+              },
+              "error_strategy": {
+                "type": "string",
+                "enum": ["inline_error", "full_page_error", "toast", "silent_fail"]
+              },
+              "slots": {
+                "type": "array",
+                "items": { "$ref": "#/definitions/componentSlot" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "componentSlot": {
+      "type": "object",
+      "required": ["slot_id", "slot_type", "label", "repeat", "conditional", "data_required", "content_priority"],
+      "additionalProperties": false,
+      "properties": {
+        "slot_id": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
+        "slot_type": {
+          "type": "string",
+          "enum": [
+            "navigation_bar", "search_field", "list_item", "card", "button_primary",
+            "button_secondary", "icon_button", "avatar", "badge", "form_field",
+            "data_table", "chart", "image", "divider", "spacer", "heading",
+            "body_text", "caption", "empty_state_illustration", "skeleton",
+            "tab_item", "chip", "toggle", "checkbox", "radio", "select",
+            "text_input", "icon", "progress_indicator", "pagination"
+          ]
+        },
+        "label": { "type": "string" },
+        "repeat": { "type": "boolean" },
+        "repeat_count_hint": { "oneOf": [{ "type": "null" }, { "type": "integer", "minimum": 1 }] },
+        "conditional": { "type": "boolean" },
+        "condition_expression": { "oneOf": [{ "type": "null" }, { "type": "string" }] },
+        "data_binding": { "oneOf": [{ "type": "null" }, { "type": "string" }] },
+        "data_required": { "type": "boolean" },
+        "interactions": {
+          "type": "array",
+          "items": { "type": "string", "enum": ["tap", "swipe", "long_press", "hover", "focus", "drag", "scroll", "pinch"] }
+        },
+        "content_priority": { "type": "integer", "minimum": 1, "maximum": 5 },
+        "responsive": {
+          "type": "object",
+          "properties": {
+            "mobile": { "type": "string" },
+            "tablet": { "type": "string" },
+            "desktop": { "type": "string" }
+          }
+        },
+        "notes": { "type": "string" }
+      }
+    }
+  }
+}

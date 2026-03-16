@@ -1,0 +1,187 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "token-map.schema.json",
+  "title": "Token Map",
+  "description": "Design token registry and per-slot token assignments produced by the token-mapper agent.",
+  "type": "object",
+  "required": ["meta", "token_registry", "slot_token_maps"],
+  "additionalProperties": false,
+  "properties": {
+    "meta": {
+      "type": "object",
+      "required": ["generated_from", "theme_files_discovered", "generated_at", "token_registry_size", "mapped_slots"],
+      "additionalProperties": false,
+      "properties": {
+        "generated_from": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "theme_files_discovered": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "generated_at": { "type": "string", "format": "date-time" },
+        "token_registry_size": { "type": "integer", "minimum": 0 },
+        "mapped_slots": { "type": "integer", "minimum": 0 },
+        "missing_token_count": { "type": "integer", "minimum": 0 },
+        "warning_count": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "token_registry": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["token_id", "category", "raw_value", "resolved_value", "source_file"],
+        "additionalProperties": false,
+        "properties": {
+          "token_id": {
+            "type": "string",
+            "description": "Normalized token name in category.variant.state format"
+          },
+          "category": {
+            "type": "string",
+            "enum": ["color", "spacing", "typography", "shape", "motion", "elevation", "sizing", "opacity"]
+          },
+          "raw_value": {
+            "oneOf": [
+              { "type": "string" },
+              { "type": "number" }
+            ]
+          },
+          "resolved_value": {
+            "oneOf": [
+              { "type": "string" },
+              { "type": "number" }
+            ],
+            "description": "Final primitive value after resolving all aliases"
+          },
+          "aliases_from": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "source_file": { "type": "string" },
+          "css_variable": { "oneOf": [{ "type": "null" }, { "type": "string" }] },
+          "js_path": { "oneOf": [{ "type": "null" }, { "type": "string" }] }
+        }
+      }
+    },
+    "slot_token_maps": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["screen_id", "slot_id", "slot_type", "token_assignments"],
+        "additionalProperties": false,
+        "properties": {
+          "screen_id": { "type": "string" },
+          "slot_id": { "type": "string" },
+          "slot_type": { "type": "string" },
+          "token_assignments": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "background_color": { "oneOf": [{ "type": "null" }, { "type": "string" }] },
+              "foreground_color": { "oneOf": [{ "type": "null" }, { "type": "string" }] },
+              "border_color": { "oneOf": [{ "type": "null" }, { "type": "string" }] },
+              "border_radius": { "oneOf": [{ "type": "null" }, { "type": "string" }] },
+              "border_width": { "oneOf": [{ "type": "null" }, { "type": "string" }] },
+              "padding_horizontal": { "oneOf": [{ "type": "null" }, { "type": "string" }] },
+              "padding_vertical": { "oneOf": [{ "type": "null" }, { "type": "string" }] },
+              "gap": { "oneOf": [{ "type": "null" }, { "type": "string" }] },
+              "typography_style": { "oneOf": [{ "type": "null" }, { "type": "string" }] },
+              "font_size": { "oneOf": [{ "type": "null" }, { "type": "string" }] },
+              "font_weight": { "oneOf": [{ "type": "null" }, { "type": "string" }] },
+              "line_height": { "oneOf": [{ "type": "null" }, { "type": "string" }] },
+              "icon_size": { "oneOf": [{ "type": "null" }, { "type": "string" }] },
+              "elevation": { "oneOf": [{ "type": "null" }, { "type": "string" }] },
+              "opacity": { "oneOf": [{ "type": "null" }, { "type": "string" }] }
+            }
+          },
+          "contrast_check": {
+            "oneOf": [
+              { "type": "null" },
+              {
+                "type": "object",
+                "required": ["foreground_token", "background_token", "ratio", "wcag_aa_pass"],
+                "additionalProperties": false,
+                "properties": {
+                  "foreground_token": { "type": "string" },
+                  "background_token": { "type": "string" },
+                  "ratio": { "type": "number", "minimum": 1 },
+                  "wcag_aa_pass": { "type": "boolean" },
+                  "wcag_aaa_pass": { "type": "boolean" }
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    "missing_tokens": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["gap_id", "screen_id", "slot_id", "property", "description", "severity"],
+        "additionalProperties": false,
+        "properties": {
+          "gap_id": { "type": "string" },
+          "screen_id": { "type": "string" },
+          "slot_id": { "type": "string" },
+          "property": { "type": "string" },
+          "description": { "type": "string" },
+          "suggested_value": { "oneOf": [{ "type": "null" }, { "type": "string" }] },
+          "severity": { "type": "string", "enum": ["blocking", "warning"] },
+          "resolution_hint": { "type": "string" }
+        }
+      }
+    },
+    "hardcoded_values": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["source_file", "property", "raw_value"],
+        "additionalProperties": false,
+        "properties": {
+          "source_file": { "type": "string" },
+          "line_number": { "oneOf": [{ "type": "null" }, { "type": "integer" }] },
+          "property": { "type": "string" },
+          "raw_value": { "type": "string" },
+          "recommended_token": { "oneOf": [{ "type": "null" }, { "type": "string" }] }
+        }
+      }
+    },
+    "contrast_failures": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["screen_id", "slot_id", "foreground", "background", "ratio", "minimum_required"],
+        "additionalProperties": false,
+        "properties": {
+          "screen_id": { "type": "string" },
+          "slot_id": { "type": "string" },
+          "foreground": { "type": "string" },
+          "background": { "type": "string" },
+          "ratio": { "type": "number" },
+          "minimum_required": { "type": "number" },
+          "fix_suggestion": { "type": "string" }
+        }
+      }
+    },
+    "proposed_aliases": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["alias_name", "resolves_to", "rationale"],
+        "additionalProperties": false,
+        "properties": {
+          "alias_name": { "type": "string" },
+          "resolves_to": { "type": "string" },
+          "rationale": { "type": "string" }
+        }
+      }
+    },
+    "token_mapper_notes": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  }
+}

@@ -1,0 +1,165 @@
+goal: "Build structural lo-fi wireframes in Figma as grey-box layouts with annotated zone frames and slot placeholders, flow connector arrows for happy-path edges, and write lo-fi-frames/index.json"
+
+context: |
+  The lo-fi-builder agent receives screen-blueprints.json and user-flows.json and builds
+  purely structural wireframes on a dedicated Figma page. No colour, no typography scale,
+  no component instantiation, no variable bindings. This is the last cheap decision point
+  before the expensive token and component stages.
+
+  Inputs:
+    - screen-blueprints.json — zones, slots, layout patterns, states per screen
+    - user-flows.json — edges with is_happy_path for connector arrows
+
+  Figma page:
+    Name: "Lo-Fi Wireframes" (find or create)
+    One SECTION per screen_id, named with the screen_id
+    Within each section, one FRAME per state present in the blueprint
+    (default is always present; loading/error/empty only if listed in blueprint)
+
+  Frame naming: [screen_id]__[state]  e.g. home__default, home__loading
+
+  Platform frame dimensions (from requirements.json; fall back to mobile if not specified):
+    mobile / web_mobile: 390 × 844  (iPhone 14)
+    tablet:              768 × 1024
+    desktop:             1440 × 900
+
+  Frame settings:
+    layoutMode: VERTICAL
+    primaryAxisSizingMode: FIXED
+    counterAxisSizingMode: FIXED
+    fills: white { r:1, g:1, b:1 }
+    clipsContent: true
+
+  Greyscale palette (hardcoded — the one sanctioned exception to no-hardcoded-values):
+    Page background:       #F0F0F0
+    Screen frame bg:       #FFFFFF
+    Fixed zone (header/footer): #E8E8E8  rgb(0.91, 0.91, 0.91)
+    Scrollable zone:       #F5F5F5  rgb(0.96, 0.96, 0.96)
+    Slot placeholder fill: #D6D6D6  rgb(0.839, 0.839, 0.839)
+    Slot placeholder stroke: #BDBDBD rgb(0.741, 0.741, 0.741)
+    Annotation text:       #757575
+    Slot label text:       #424242
+    Divider:               #E0E0E0
+
+  Zone frames:
+    Name: zone__[zone_id]
+    layoutMode: VERTICAL
+    itemSpacing: 8
+    paddingTop/Bottom: 8, paddingLeft/Right: 16
+    layoutSizingHorizontal: FILL
+    primaryAxisSizingMode: AUTO (hug) — except scrollable zones: AUTO with scroll
+    Fixed zones (is_fixed: true): fill #E8E8E8
+    Scrollable zones: fill #F5F5F5
+    Zone label text node at top: zone_id uppercase, Inter Regular 10px, #757575
+
+  Slot placeholder rectangles:
+    Name: slot__[slot_id]__[slot_type]
+    fill: #D6D6D6, stroke: #BDBDBD, strokeWeight: 1, cornerRadius: 4
+    layoutSizingHorizontal: FILL (except fixed-dimension slots)
+    Label text node centred inside: "[slot_id] · [slot_type]", Inter Regular 10px, #424242
+
+    Height heuristics by slot_type:
+      navigation_bar, app_bar:              56px
+      search_field, form_field, input:      48px
+      button_primary, button_secondary:     44px
+      icon_button:                          44px
+      card:                                 120px
+      list_item:                            72px
+      hero:                                 200px
+      image:                                160px
+      heading:                              32px
+      body_text:                            48px
+      caption:                              20px
+      divider:                              1px
+      spacer:                               16px
+      avatar:                               40 × 40 (fixed width and height, not FILL)
+      badge:                                20 × 20 (fixed)
+      chip:                                 32px
+      tab_bar:                              56px
+      bottom_sheet:                         240px
+      empty_state_illustration:             160px
+      error_message:                        80px
+      skeleton:                             same height as the slot_type it replaces
+      spinner:                              48 × 48 (fixed)
+      progress_bar:                         8px
+      data_table:                           240px
+      chart:                                200px
+      toggle, checkbox, radio:              24 × 24 (fixed)
+      select, textarea:                     48px
+      modal_overlay:                        320px
+      default (unknown):                    64px
+
+    repeat: true slots — create 3 stacked instances of the placeholder height with
+      a faint "×N" text annotation above the group (Inter Regular 10px, #757575)
+
+  State-specific treatments:
+    loading state — replace data-driven slots with shimmer-like rectangles:
+      fill: #E8E8E8, cornerRadius: 4, label: "[slot_id] · skeleton"
+    error state — centred rectangle, fill #FFEBEE, height 200px, label "Error State"
+    empty state — centred rectangle, fill #E3F2FD, height 200px, label "Empty State"
+
+  Flow connector arrows (after all frames created):
+    Source: edges in user-flows.json where is_happy_path: true
+    Connect default state frames only: from_node → to_node (use screen_id__default frames)
+    Connector settings:
+      connectorStart: { endpointNodeId: fromFrameId, magnet: 'RIGHT' }
+      connectorEnd:   { endpointNodeId: toFrameId,   magnet: 'LEFT'  }
+      strokes: [{ type: 'SOLID', color: { r:0.459, g:0.459, b:0.459 } }]
+      strokeWeight: 1.5
+      connectorEndStrokeCap: 'ARROW_LINES'
+    Edge label: text node with edge trigger.label, Inter Regular 10px, #757575
+
+  Canvas grid layout:
+    Sections arranged left-to-right in rows of 4
+    X offset: (section_index % 4) * 500
+    Y offset: Math.floor(section_index / 4) * 1000
+
+  Output file — lo-fi-frames/index.json:
+    meta:
+      generated_from: ["screen-blueprints.json", "user-flows.json"]
+      generated_at: ISO8601
+      figma_page_id: string
+      figma_page_name: "Lo-Fi Wireframes"
+      total_sections: integer
+      total_frames: integer
+    screens: array of:
+      screen_id
+      section_node_id
+      states: keyed object — for each state:
+        frame_node_id
+        zone_node_ids: { zone_id: node_id }
+        slot_node_ids: { slot_id: node_id }
+
+  Note: lo-fi frame node IDs are for human reference only.
+  No downstream agent reads lo-fi-frames/index.json for building.
+
+constraints:
+  - "Use ONLY hardcoded greyscale values from the palette — Figma Variables do not exist yet"
+  - "Never instantiate any Figma components on this page"
+  - "Never apply variable bindings on this page"
+  - "Every slot from every blueprint state must have a placeholder rectangle"
+  - "repeat: true slots must produce 3 stacked placeholder instances with a ×N annotation"
+  - "Connector lines drawn only for is_happy_path: true edges, connecting default state frames"
+  - "Loading state slots must use the shimmer fill treatment (#E8E8E8), not the standard grey"
+  - "Font loading (Inter Regular, Inter Medium) must be awaited before setting any text"
+  - "Page switching must use await figma.setCurrentPageAsync() — never direct assignment"
+  - "All nodes must be inside a Section or Frame — never on the canvas root"
+  - "Write lo-fi-frames/index.json before declaring completion"
+  - "All file reads and writes must be scoped to the pipeline working directory"
+
+acceptance_criteria:
+  - "Figma 'Lo-Fi Wireframes' page exists"
+  - "One section per screen_id from screen-blueprints.json, named with the screen_id"
+  - "Each section contains one frame per state listed in the blueprint (minimum: default)"
+  - "Frames are named [screen_id]__[state]"
+  - "Each frame has the correct platform dimensions (390×844 for mobile unless overridden)"
+  - "Each frame contains child zone frames named zone__[zone_id]"
+  - "Each zone frame contains slot placeholder rectangles named slot__[slot_id]__[slot_type]"
+  - "Placeholder heights match the heuristics table (±2px tolerance)"
+  - "repeat: true slots have 3 stacked placeholder rectangles with a ×N text annotation"
+  - "Loading state frames contain shimmer-fill (#E8E8E8) placeholders, not standard grey"
+  - "Error state frames contain a centred #FFEBEE rectangle labelled 'Error State'"
+  - "Empty state frames contain a centred #E3F2FD rectangle labelled 'Empty State'"
+  - "Happy-path edges from user-flows.json have connector arrows between default state frames"
+  - "lo-fi-frames/index.json is written with section_node_id, frame_node_id, zone_node_ids, and slot_node_ids for every screen and state"
+  - "lo-fi-frames/index.json meta contains generated_at, figma_page_id, total_sections, and total_frames"

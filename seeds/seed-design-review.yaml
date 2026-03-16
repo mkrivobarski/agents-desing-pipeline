@@ -1,0 +1,207 @@
+goal: "Perform a semantic design review of all Figma screens — capturing live screenshots, auditing 8 categories, and producing design-review.json and design-review-report.md with ranked findings and a quality score"
+
+context: |
+  The design-review-agent runs after figma-frame-extractor. It reads the extracted
+  layer tree data, captures a live screenshot per screen, then audits every screen
+  across 8 categories. Findings are concrete and location-specific — never fabricated.
+
+  Inputs:
+    - extracted-frames/index.json — all extracted screens with nodeIds and per-screen
+      data file paths (from figma-frame-extractor)
+    - figma-tokens.json — resolved token registry (token names → hex/value)
+    - requirements.json (optional) — expected component names, accessibility requirements,
+      brand constraints
+
+  For each screen entry in extracted-frames/index.json, also read the corresponding
+  extracted-frames/[screen_id].json for layer tree, component instances, spacing
+  values, colour fills, and typography details.
+
+  ─── SCREENSHOT STEP (mandatory before any checks) ────────────────────────────
+
+  Before evaluating any screen, capture a live screenshot:
+
+    figma_capture_screenshot(nodeId: screen.nodeId, scale: 2)
+
+  If Desktop Bridge is not running, fall back to:
+
+    figma_get_component_image(nodeId: screen.nodeId, scale: 2)
+
+  Record which method was used in meta.screenshot_method. Screenshots are required for:
+    - Visual contrast assessment when extracted JSON values are ambiguous
+    - Confirming rendered spacing and alignment
+    - Pattern abstraction recognition across screens
+    - Visual inconsistencies not captured in numeric layer data
+
+  ─── 8 REVIEW CATEGORIES ──────────────────────────────────────────────────────
+
+  1. accessibility
+     - Contrast ratios: compute WCAG 2.1 relative luminance. Flag text below 4.5:1 (AA
+       normal) or 3:1 (large ≥18pt or bold ≥14pt) as error. Between 4.5:1 and 7:1 → suggestion.
+     - Tap targets: interactive elements (button, icon_button, link, toggle, checkbox, radio)
+       must be ≥44×44px mobile / ≥32×32px web. Below minimum → error. 40–43px → warning.
+     - Missing alt text: icon-only buttons and image layers with no descriptive layer name → warning.
+     - Focus order: overlapping layers or unusual Z-ordering breaking visual reading order → warning.
+
+  2. consistency
+     Cross-reference all semantically equivalent elements (primary buttons, inputs, headings,
+     cards) across screens. Two distinct styles for same role → warning. Two distinct primary
+     buttons on same screen without state difference → error.
+
+  3. token_adherence
+     For every colour fill, stroke, border radius, spacing, and font size:
+     - Exact match to token → pass
+     - No match → warning with exact hex/value and layer path
+     - Within 2px (spacing) or 5% luminance (colour) of a token → suggestion (likely rounding)
+     Aggregate all unique unmatched values in summary.
+
+  4. spacing
+     Infer base spacing unit from figma-tokens.json (spacing.xs, spacing.base, etc.; default 8px).
+     Any spacing value not a multiple of the base unit and not in the token registry → warning.
+     Values appearing only once across all screens → suggestion.
+
+  5. typography
+     Collect every font-size/weight/family/line-height combination. Compare to token scale.
+     More than 6 distinct font sizes → flag excess as warning.
+     Same semantic context (page titles) with different sizes across screens → warning.
+     Font family not in token registry → error.
+     Missing scale levels (H1 and H3 but no H2 usage) → suggestion.
+
+  6. pattern_abstraction
+     Recurring UI patterns built from raw primitives rather than a shared component:
+     - Card pattern: image/icon + title + body + optional action, repeated 2+ times in a screen
+       or across 3+ screens
+     - Form row: label + input appearing 3+ times
+     - Navigation: tab bars, breadcrumbs, steppers as raw frames on multiple screens
+     - Header/footer: duplicate raw frames on multiple screens
+     Each identified pattern → suggestion with screens list and recommended component name.
+
+  7. naming
+     Default Figma names (Frame N, Rectangle N, Group N, Vector N, Text) → warning.
+     Top-level frames named generically (Screen 1, Artboard 3) → warning.
+     Interactive layers named by appearance not function ("Blue Rounded Box") → suggestion.
+
+  8. design_debt
+     Duplicate frames (identical names or near-identical structures) → warning.
+     Hidden layers (visible: false) not annotated as spec layers → suggestion.
+     Detached components (plain frame matching a known component structure) → warning.
+     Orphaned variants (instance using a variant value that no longer exists) → error.
+
+  ─── TOOL USAGE ──────────────────────────────────────────────────────────────
+
+  Call these tools only when extracted JSON is insufficient for a confident finding:
+    figma_get_component_for_development(nodeId) — exact layout/typography/visual specs
+    figma_get_component(nodeId) — variant properties and component metadata
+    figma_capture_screenshot(nodeId, scale: 2) — live plugin-runtime state
+    figma_get_component_image(nodeId, scale: 2) — rendered element for visual inspection
+
+  Batch tool calls per screen — fetch all missing data before moving to the next screen.
+
+  ─── SCORE FORMULA ────────────────────────────────────────────────────────────
+
+    score = max(0, 100 - (error_count * 5) - (warning_count * 2) - (suggestion_count * 0.5))
+
+    ≥ 90  → excellent
+    75–89 → acceptable, minor rework
+    60–74 → significant attention required
+    < 60  → design system review required before dev handoff
+
+  ─── OUTPUT FILES ─────────────────────────────────────────────────────────────
+
+  Write design-review.json:
+    {
+      "meta": {
+        "generated_at": "ISO8601",
+        "source_files": ["extracted-frames/index.json", "figma-tokens.json"],
+        "screens_reviewed": 0,
+        "total_issues": 0,
+        "screenshot_method": "figma_capture_screenshot|figma_get_component_image|none"
+      },
+      "screens": [
+        {
+          "screenId": "string",
+          "name": "string",
+          "checks": [
+            {
+              "checkId": "[screen_id]__[category]__001",
+              "category": "accessibility|consistency|token_adherence|spacing|typography|pattern_abstraction|naming|design_debt",
+              "severity": "error|warning|suggestion",
+              "message": "One-sentence description of the issue",
+              "location": "HomeScreen / Content / CardList / Card1 / Title",
+              "affectedValue": "exact value e.g. #3D3D3D or 13px",
+              "expectedValue": "e.g. color.text.primary (#1A1A1A) or spacing.sm (8px)",
+              "recommendation": "Specific, actionable fix instruction",
+              "exampleFix": "Set fill to color.text.primary token (#1A1A1A). Current fill #3D3D3D has contrast ratio 3.1:1 against white — below 4.5:1 AA minimum."
+            }
+          ]
+        }
+      ],
+      "summary": {
+        "totalIssues": 0,
+        "byCategory": {
+          "accessibility":       { "error": 0, "warning": 0, "suggestion": 0 },
+          "consistency":         { "error": 0, "warning": 0, "suggestion": 0 },
+          "token_adherence":     { "error": 0, "warning": 0, "suggestion": 0 },
+          "spacing":             { "error": 0, "warning": 0, "suggestion": 0 },
+          "typography":          { "error": 0, "warning": 0, "suggestion": 0 },
+          "pattern_abstraction": { "error": 0, "warning": 0, "suggestion": 0 },
+          "naming":              { "error": 0, "warning": 0, "suggestion": 0 },
+          "design_debt":         { "error": 0, "warning": 0, "suggestion": 0 }
+        },
+        "byScreen": [
+          { "screenId": "string", "name": "string", "errorCount": 0, "warningCount": 0, "suggestionCount": 0 }
+        ],
+        "score": 0.0,
+        "scoreExplanation": "max(0, 100 - (errors*5) - (warnings*2) - (suggestions*0.5))"
+      },
+      "patterns": [
+        {
+          "patternId": "pattern_001",
+          "name": "e.g. ProductCard",
+          "occurrences": 0,
+          "screenIds": [],
+          "shouldBeComponent": true,
+          "description": "describe structure and why abstraction is warranted",
+          "suggestedComponentStructure": "Root frame (HORIZONTAL, 16px gap) > [Image 48×48, radius 8] + [Content (VERTICAL, 4px gap) > [Title body.medium] + [Subtitle caption.regular]]"
+        }
+      ],
+      "reviewerNotes": []
+    }
+
+  Write design-review-report.md:
+    # Design Review Report
+    **Project:** [inferred from screen names]
+    **Screens reviewed:** N
+    **Generated:** ISO8601
+    **Overall score:** X/100
+
+    ## Executive Summary
+    ## Critical Issues (Errors)  [one subsection per error, grouped by screen]
+    ## Warnings                  [table: Screen | Layer | Issue | Fix, per category]
+    ## Suggestions               [bulleted list per category]
+    ## Patterns to Componentise  [one subsection per pattern]
+    ## Category Breakdown        [one paragraph per category]
+
+constraints:
+  - "Capture a screenshot for every screen BEFORE writing any checks for that screen — never skip the screenshot step"
+  - "Never invent issues not supported by data in extracted JSON, tool call results, or screenshots"
+  - "affectedValue must be the exact value found (hex string, pixel number) — not a description"
+  - "Every error-severity check must have a non-empty exampleFix field"
+  - "Cross-screen consistency checks must cite both screen IDs"
+  - "Pattern entries require at least 2 occurrence screen IDs — never flag single-use elements as patterns"
+  - "score must be computed from actual counts using the formula — not estimated"
+  - "Review every screen in extracted-frames/index.json — do not skip any"
+  - "Write both design-review.json and design-review-report.md before declaring completion"
+  - "All file reads and writes must be scoped to the pipeline working directory"
+
+acceptance_criteria:
+  - "design-review.json is written and valid JSON"
+  - "design-review-report.md is written with at minimum: # Design Review Report, ## Executive Summary, ## Critical Issues, ## Warnings, ## Patterns to Componentise, ## Category Breakdown sections"
+  - "meta.screenshot_method records which capture method was used"
+  - "Every screen from extracted-frames/index.json has at least one check entry in screens[]"
+  - "Every check has: checkId, category, severity, message, location, affectedValue, expectedValue, recommendation"
+  - "Every error-severity check has a non-empty exampleFix"
+  - "summary.byCategory contains all 8 categories each with error/warning/suggestion counts"
+  - "summary.score is computed from the formula and matches the counts in summary.byCategory"
+  - "patterns[] is present (may be empty); every entry has occurrences >= 2 and a screenIds array"
+  - "Contrast checks reference actual hex values from the layer data, not descriptions"
+  - "Tap target checks only flag nodes tagged as interactive"

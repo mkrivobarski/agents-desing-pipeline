@@ -1,0 +1,271 @@
+goal: "Build all atoms, molecules, and organisms as real Figma COMPONENT nodes with full state variant sets and variable bindings, producing built-component-library.json with accurate post-combine node IDs"
+
+context: |
+  The component-builder agent receives component-build-plan.json (ordered build list)
+  and token-map.json (token registry with variable_id fields). It builds production-quality
+  Figma components on a dedicated "Component Library" page and writes
+  built-component-library.json — the registry every downstream agent reads for instantiation.
+
+  Inputs:
+    - component-build-plan.json — build_order array from component-architect
+    - token-map.json — token registry with variable_id fields from token-system-builder
+
+  ─── CRITICAL API RULE 1: COMPONENT_SET creation ───────────────────────────────
+
+  There is no figma.createComponentSet(). The only valid pattern is combineAsVariants:
+
+    // Step 1: create one COMPONENT per variant combination
+    const defaultComp = figma.createComponent();
+    defaultComp.name = "Variant=filled,Size=md,State=Default";
+    // configure fills, layout...
+
+    const hoverComp = figma.createComponent();
+    hoverComp.name = "Variant=filled,Size=md,State=Hover";
+
+    // Step 2: append ALL variants to the tier section BEFORE combining
+    atomsSection.appendChild(defaultComp);
+    atomsSection.appendChild(hoverComp);
+
+    // Step 3: combine — destroys originals, returns new COMPONENT_SET
+    const buttonSet = figma.combineAsVariants([defaultComp, hoverComp], atomsSection);
+    buttonSet.name = "Button";
+
+    // Step 4: read back IDs IMMEDIATELY — pre-combine IDs are gone
+    const result = {
+      set_id: buttonSet.id,
+      set_key: buttonSet.key,
+      variants: {}
+    };
+    for (const child of buttonSet.children) {
+      result.variants[child.name] = { node_id: child.id, key: child.key };
+    }
+    return result;
+
+  One figma_execute call per component set. Never one call per variant.
+
+  Variant name format: "Prop1=Val1,Prop2=Val2,..." (comma-separated, all dimensions)
+  Example: "Variant=filled,Size=md,State=Default"
+
+  ─── CRITICAL API RULE 2: Variable binding ───────────────────────────────────
+
+  All fills, spacing, and radius must be bound to Figma Variables. Never hardcode.
+
+    function bindFill(node, tokenId, tokenMap) {
+      const token = tokenMap[tokenId];
+      if (!token || !token.variable_id) {
+        const hex = token ? token.resolved_value : '#FF00FF'; // magenta = missing
+        node.fills = [{ type: 'SOLID', color: hexToRgb(hex) }];
+        return { bound: false, token: tokenId, reason: 'null_variable_id' };
+      }
+      const variable = figma.variables.getVariableById(token.variable_id);
+      if (!variable) {
+        node.fills = [{ type: 'SOLID', color: hexToRgb(token.resolved_value) }];
+        return { bound: false, token: tokenId, reason: 'variable_not_found' };
+      }
+      figma.variables.setBoundVariableForNode(node, 'fills', variable);
+      return { bound: true, token: tokenId, variable_id: token.variable_id };
+    }
+
+    function bindSpacing(node, property, tokenId, tokenMap) {
+      const token = tokenMap[tokenId];
+      if (!token || !token.variable_id) {
+        node[property] = token ? token.resolved_value : 0;
+        return { bound: false };
+      }
+      const variable = figma.variables.getVariableById(token.variable_id);
+      if (!variable) { node[property] = token.resolved_value; return { bound: false }; }
+      figma.variables.setBoundVariableForNode(node, property, variable);
+      return { bound: true };
+    }
+
+  Unbound tokens are logged in the result object's fallbacks array — never silently ignored.
+
+  ─── CRITICAL API RULE 3: State-specific token interpolation ────────────────
+
+  token_bindings.fills may use a [state] placeholder:
+    "Component/Button/Background/[state]"
+  Replace [state] with the variant's State value, lowercased:
+    Variant "State=Hover" → token ID "Component/Button/Background/hover"
+  If the interpolated token does not exist in token-map.json, fall back to the
+  Default state token and log a fallback entry.
+
+  ─── CRITICAL API RULE 4: Child instantiation ───────────────────────────────
+
+  Molecules and organisms instantiate child atoms/molecules by node ID:
+
+    const atomNodeId = library["Input"].variants["Size=md,State=Default"].node_id;
+    const atomNode = await figma.getNodeByIdAsync(atomNodeId);
+    if (!atomNode || atomNode.type !== 'COMPONENT') {
+      throw new Error(`Atom node not found: ${atomNodeId}`);
+    }
+    const atomInstance = atomNode.createInstance();
+    moleculeComp.appendChild(atomInstance);
+
+  Never use findOne(), name-based lookup, or importComponentByKeyAsync for
+  locally-built components.
+
+  ─── CRITICAL API RULE 5: Component properties ──────────────────────────────
+
+  TEXT, BOOLEAN, and INSTANCE_SWAP properties are added to the COMPONENT_SET
+  after combineAsVariants, not on individual variant components:
+
+    buttonSet.addComponentProperty('Label', 'TEXT', 'Button');
+    buttonSet.addComponentProperty('Loading', 'BOOLEAN', false);
+    buttonSet.addComponentProperty('Icon', 'INSTANCE_SWAP', null);
+
+  ─── Page and section setup ──────────────────────────────────────────────────
+
+  Run once before any component is built:
+
+    let libPage = figma.pages.find(p => p.name === "Component Library");
+    if (!libPage) {
+      libPage = figma.createPage();
+      libPage.name = "Component Library";
+    }
+    await figma.setCurrentPageAsync(libPage);
+
+    const atomsSection     = figma.createSection();
+    atomsSection.name      = "Atoms";
+    const moleculesSection = figma.createSection();
+    moleculesSection.name  = "Molecules";
+    const organismsSection = figma.createSection();
+    organismsSection.name  = "Organisms";
+    libPage.appendChild(atomsSection);
+    libPage.appendChild(moleculesSection);
+    libPage.appendChild(organismsSection);
+
+  Section canvas positions:
+    Atoms:     x: 0, y: 0
+    Molecules: x: 0, y: atoms_section_height + 120
+    Organisms: x: 0, y: molecules_section_bottom + 120
+
+  Within each section, component sets positioned in horizontal flow with 40px gaps.
+
+  ─── Per-component script template ──────────────────────────────────────────
+
+  Each component set is built in a single figma_execute call:
+
+    (async () => {
+      await figma.loadFontAsync({ family: "Inter", style: "Regular" });
+      await figma.loadFontAsync({ family: "Inter", style: "SemiBold" });
+
+      const tokenMap = { /* inlined subset from token-map.json for this component */ };
+
+      function hexToRgb(hex) {
+        return {
+          r: parseInt(hex.slice(1,3),16)/255,
+          g: parseInt(hex.slice(3,5),16)/255,
+          b: parseInt(hex.slice(5,7),16)/255
+        };
+      }
+      function bindFill(node, tokenId) { /* ... as above ... */ }
+      function bindSpacing(node, property, tokenId) { /* ... as above ... */ }
+
+      const section = figma.currentPage.findOne(
+        n => n.type === 'SECTION' && n.name === 'Atoms'
+      );
+      if (!section) return { error: 'Atoms section not found' };
+
+      const fallbacks = [];
+
+      // Build variants...
+      const defaultComp = figma.createComponent();
+      defaultComp.name = "Variant=filled,Size=md,State=Default";
+      defaultComp.layoutMode = "HORIZONTAL";
+      defaultComp.primaryAxisSizingMode = "HUG";
+      defaultComp.counterAxisSizingMode = "FIXED";
+      defaultComp.resize(120, 44);
+      const fillResult = bindFill(defaultComp, "Component/Button/Background/default");
+      if (!fillResult.bound) fallbacks.push(fillResult);
+      // ... more variants ...
+
+      section.appendChild(defaultComp);
+      // ... append other variants ...
+
+      const buttonSet = figma.combineAsVariants([defaultComp /*, ...*/], section);
+      buttonSet.name = "Button";
+      buttonSet.description = spec.description;
+      buttonSet.addComponentProperty('Label', 'TEXT', 'Button');
+
+      const variants = {};
+      for (const child of buttonSet.children) {
+        variants[child.name] = { node_id: child.id, key: child.key };
+      }
+
+      return {
+        name: "Button",
+        set_id: buttonSet.id,
+        set_key: buttonSet.key,
+        variants,
+        fallbacks
+      };
+    })();
+
+  ─── built-component-library.json schema ─────────────────────────────────────
+
+    {
+      "meta": {
+        "generated_at": "ISO8601",
+        "figma_page_id": "string",
+        "figma_page_name": "Component Library",
+        "sections": {
+          "atoms":     "section_node_id",
+          "molecules": "section_node_id",
+          "organisms": "section_node_id"
+        },
+        "total_built": integer,
+        "total_fallbacks": integer
+      },
+      "components": {
+        "Button": {
+          "tier": "atom",
+          "component_set_id": "string",
+          "component_set_key": "stored for future publishing only — never use for instantiation",
+          "instantiation_method": "getNodeByIdAsync",
+          "source": "build_required",
+          "variants": {
+            "Variant=filled,Size=md,State=Default":  { "node_id": "...", "key": "..." },
+            "Variant=filled,Size=md,State=Hover":    { "node_id": "...", "key": "..." },
+            "Variant=filled,Size=md,State=Pressed":  { "node_id": "...", "key": "..." },
+            "Variant=filled,Size=md,State=Focused":  { "node_id": "...", "key": "..." },
+            "Variant=filled,Size=md,State=Disabled": { "node_id": "...", "key": "..." }
+          },
+          "component_properties": ["Label", "Loading", "Icon"],
+          "fallbacks": []
+        }
+      },
+      "build_warnings": []
+    }
+
+constraints:
+  - "Never call figma.createComponentSet() — it does not exist; always use combineAsVariants"
+  - "Build components in the exact order from component-build-plan.json build_order — never reorder"
+  - "One figma_execute call per component set — never one call per individual variant"
+  - "Read back post-combine IDs immediately from buttonSet.children — pre-combine IDs are gone"
+  - "All visual properties must be variable-bound; fall back to hardcoded only when variable_id is null"
+  - "Log every fallback in the result object fallbacks array — never silently ignore unbound tokens"
+  - "State token interpolation: replace [state] in token ID with the variant State value lowercased"
+  - "addComponentProperty calls on the COMPONENT_SET after combineAsVariants, not on variants"
+  - "Every interactive component must have minimum states: Default, Hover, Pressed, Focused, Disabled"
+  - "Molecules instantiate atoms via figma.getNodeByIdAsync(nodeId).createInstance() — never by key"
+  - "Organisms instantiate molecules and atoms via the same getNodeByIdAsync pattern"
+  - "instantiation_method must be 'getNodeByIdAsync' for every locally-built component"
+  - "component_set_key is recorded for future publishing only — never used for instantiation"
+  - "Font loading must be awaited before setting any text character properties"
+  - "Page switching must use await figma.setCurrentPageAsync() — never direct assignment"
+  - "Write built-component-library.json before declaring completion"
+  - "All file reads and writes must be scoped to the pipeline working directory"
+  - "WRITE-CAPABLE: Only run when listed in access.figma_write_agents in pipeline.config.json"
+
+acceptance_criteria:
+  - "built-component-library.json is written to the working directory"
+  - "Every component in component-build-plan.json build_order has a corresponding entry in built-component-library.json components"
+  - "Every component entry has component_set_id (non-null), instantiation_method: 'getNodeByIdAsync', source, and a non-empty variants object"
+  - "Every variant entry has a non-null node_id and key"
+  - "Variant names follow the format 'Prop1=Val1,Prop2=Val2,...' with all variant dimensions"
+  - "Every interactive component has at minimum Default, Hover, Pressed, Focused, Disabled in its variants"
+  - "meta.total_built equals the count of entries in components"
+  - "meta.total_fallbacks equals the sum of fallbacks array lengths across all components"
+  - "Figma 'Component Library' page exists with Atoms, Molecules, and Organisms sections"
+  - "build_warnings array is present at root level (may be empty)"
+  - "Every fallback entry in any component's fallbacks array has token and reason fields"

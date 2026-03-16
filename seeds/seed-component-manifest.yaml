@@ -1,0 +1,150 @@
+goal: "Produce organism-manifest.json — the placement manifest mapping each organism from built-component-library.json to its screen zone, with variant selection and prop overrides per placement"
+
+context: |
+  The organism-composer agent runs after component-builder. It reads the built library,
+  cross-references screen-blueprints.json, and produces a flat placement index that
+  figma-instruction-writer consumes to instantiate organisms at script execution time.
+  This agent makes NO Figma API calls and writes NO parentId fields.
+
+  Inputs:
+    - built-component-library.json — post-combine component node IDs (from component-builder)
+    - component-manifest.json — slot-to-component mapping per screen (from component-architect)
+    - screen-blueprints.json — zones and layout structure per screen
+
+  ─── WHAT THIS AGENT DOES NOT PRODUCE ────────────────────────────────────────
+
+  - No parentId fields in any manifest entry (parent frames don't exist yet)
+  - No figma_execute calls
+  - No figma_instantiate_component calls
+  - No Figma API calls of any kind
+
+  ─── RESPONSIBILITIES ──────────────────────────────────────────────────────
+
+  1. Library completeness check
+     For each zone in screen-blueprints.json, verify the required organism is present
+     in built-component-library.json. Missing organisms → gaps[] entry.
+     Gaps do not block completion — produce the full manifest for covered zones.
+
+  2. Shared organism identification
+     An organism is "shared" if the same component_name appears in the same zone role
+     across two or more screens. Define shared organisms once in organisms[] with all
+     screen_placements listed. Never duplicate per screen.
+
+  3. Variant and prop mapping per placement
+     For each placement specify:
+       - variant_selection: which variant key from built-component-library.json variants{}
+         (e.g. "State=Default", "Variant=filled,Size=md,State=Default")
+       - prop_overrides: component property overrides applied via instance.setProperties()
+         in figma-instruction-writer (e.g. { "Title": "Home", "Show Back Button": false })
+
+  4. screen_zone_index
+     Flat lookup for figma-instruction-writer:
+       { "screen_id": { "zone_id": "organism_id" } }
+     figma-instruction-writer reads this to find the organism for each zone in each
+     screen without parsing the full organisms array.
+
+  5. Organism hierarchy documentation
+     Note which organisms are nested within other organisms for documentation purposes.
+     Nesting is structural in the component definitions — document only, do not re-nest.
+
+  ─── organism-manifest.json SCHEMA ───────────────────────────────────────────
+
+  {
+    "meta": {
+      "generated_from": ["built-component-library.json", "component-manifest.json", "screen-blueprints.json"],
+      "generated_at": "ISO8601",
+      "total_organisms": 0,
+      "shared_organisms": 0,
+      "screens_covered": 0,
+      "gaps_count": 0
+    },
+    "organisms": [
+      {
+        "organism_id": "shared__header",
+        "organism_name": "Header",
+        "organism_type": "app_bar",
+        "tier": "organism",
+        "is_shared": true,
+        "used_in_screens": ["home", "profile", "settings"],
+        "description": "Top navigation bar with back button, title, and action buttons",
+        "component_set_id": "<copied from built-component-library.json>",
+        "default_variant_node_id": "<copied from built-component-library.json>",
+        "instantiation_method": "getNodeByIdAsync",
+        "default_variant_key": "State=Default",
+        "default_props": {
+          "Title": "Page Title",
+          "Show Back Button": true,
+          "Show Action Button": false
+        },
+        "screen_placements": [
+          {
+            "screen_id": "home",
+            "zone_id": "header",
+            "state": "default",
+            "variant_selection": "State=Default",
+            "prop_overrides": {
+              "Title": "Home",
+              "Show Back Button": false,
+              "Show Action Button": true
+            }
+          }
+        ]
+      }
+    ],
+    "screen_zone_index": {
+      "home": {
+        "header":  "shared__header",
+        "content": "home__content_feed",
+        "footer":  "shared__tab_bar"
+      }
+    },
+    "organism_hierarchy": [
+      {
+        "parent_organism_id": "page_template",
+        "child_organism_ids": ["shared__header", "shared__tab_bar"]
+      }
+    ],
+    "gaps": [
+      {
+        "screen_id": "string",
+        "zone_id": "string",
+        "required_organism": "string",
+        "reason": "Not found in built-component-library.json — component-builder gap"
+      }
+    ],
+    "composer_notes": []
+  }
+
+  ─── KEY RULES FOR figma-instruction-writer CONSUMPTION ──────────────────────
+
+  figma-instruction-writer reads screen_zone_index[screen_id] to get
+  { zone_id: organism_id } for each screen. It then looks up the organism by
+  organism_id in organisms[] to get:
+    - default_variant_node_id → passed to figma.getNodeByIdAsync()
+    - variant_selection → selects the specific variant node_id from built-component-library.json
+    - prop_overrides for the current screen placement → applied via instance.setProperties()
+
+constraints:
+  - "organism-manifest.json entries MUST NOT contain parentId — parent frames are created at script execution time"
+  - "Make NO Figma API calls — this agent is a pure data orchestration step"
+  - "component_set_id and default_variant_node_id must be copied directly from built-component-library.json, not derived"
+  - "instantiation_method must always be 'getNodeByIdAsync' for locally-built components"
+  - "Shared organisms must be defined once with is_shared: true and all screen_placements listed — never duplicated per screen"
+  - "screen_zone_index must be a flat { screen_id: { zone_id: organism_id } } lookup covering every screen in screen-blueprints.json"
+  - "Gaps do not block completion — produce the full manifest for covered zones and list uncovered zones in gaps[]"
+  - "variant_selection key must exactly match a key in the variants{} object of the corresponding built-component-library.json entry"
+  - "Write organism-manifest.json before declaring completion"
+  - "All file reads and writes must be scoped to the pipeline working directory"
+
+acceptance_criteria:
+  - "organism-manifest.json is written to the working directory"
+  - "No entry in organisms[] contains a parentId field"
+  - "Every zone from screen-blueprints.json appears either in screen_zone_index or in gaps[]"
+  - "screen_zone_index covers every screen_id in screen-blueprints.json"
+  - "Every organism entry has: organism_id, organism_name, component_set_id (non-null), default_variant_node_id (non-null), instantiation_method: 'getNodeByIdAsync', screen_placements array"
+  - "variant_selection values in screen_placements exactly match variant keys in built-component-library.json"
+  - "Shared organisms (is_shared: true) list all their screen_placements — no duplicate organism definitions"
+  - "gaps[] is present at root level (may be empty if all zones are covered)"
+  - "meta.total_organisms equals the count of entries in organisms[]"
+  - "meta.gaps_count equals the count of entries in gaps[]"
+  - "composer_notes array is present (may be empty)"

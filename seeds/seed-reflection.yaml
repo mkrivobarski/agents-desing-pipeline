@@ -1,0 +1,66 @@
+goal: >
+  Run post-run reflection for a completed design pipeline run. Collect signals from
+  all run artifacts (validation reports, consistency fixes, token binding fallbacks,
+  missing component keys), update patterns.json in pipeline_memory_dir with occurrence
+  counts and confidence scores, promote qualifying patterns to soft-context or
+  hard-constraints, and identify any patterns that have hit the permanent-rule threshold.
+
+context: |
+  Inputs (read from working_dir):
+    - pipeline-intake.json         (run_id, elicitation_mode)
+    - run-history.json             (historical run records for confidence calculation)
+    - validation-reports/          (per-screen validation results, correction loop counts)
+    - consistency-fixes.json       (applied fixes, human review items)
+    - delivery-package.json        (overall pipeline metrics)
+
+  Inputs/outputs (read+write from pipeline_memory_dir):
+    - patterns.json                (existing learned patterns — update, do not replace)
+    - soft-context.json            (promoted hints)
+    - hard-constraints.json        (promoted constraints)
+    - permanent-rules-pending.json (patterns awaiting human confirmation)
+
+  The reflection agent is READ-ONLY for working_dir.
+  The reflection agent only WRITES to pipeline_memory_dir.
+
+  Signal types to collect:
+    - correction_loop: screens needing 2+ correction loops indicate generation errors
+    - consistency_fix: recurring rogue colours or off-scale spacing indicate systemic issues
+    - token_fallback: variables not found → token-mapper missing variable_id
+    - missing_component_key: component-resolver live discovery failures
+    - human_review_item: issues that required human intervention
+
+  Promotion thresholds:
+    - soft_context:    occurrence_count ≥ 3 AND confidence > 0.70
+    - hard_constraint: occurrence_count ≥ 5 AND confidence > 0.85
+    - permanent_rule:  occurrence_count ≥ 8 AND confidence > 0.90
+
+  Confidence formula:
+    confidence = occurrence_count / (occurrence_count + contradicting_runs)
+    where contradicting_runs = runs where the same pattern did NOT occur
+
+constraints:
+  - MUST read patterns.json first; MUST increment existing pattern counts rather than
+    creating duplicates
+  - Never decrease occurrence_count
+  - Never write outside pipeline_memory_dir
+  - Permanent rule promotions go to permanent-rules-pending.json only — never
+    directly modify agent .md files
+  - patterns.json must be valid JSON after every update
+  - Write patterns.json first, then soft-context.json, hard-constraints.json,
+    permanent-rules-pending.json, then reflection-[run_id].json last
+
+acceptance_criteria:
+  - pipeline_memory_dir/patterns.json is updated and valid JSON
+  - Each updated pattern has: pattern_id, signal_type, description, first_seen_run,
+    last_seen_run, occurrence_count (incremented), confidence, affected_agent,
+    promotion_status
+  - soft-context.json is updated (may be empty array if no patterns qualify)
+  - hard-constraints.json is updated (may be empty array if no patterns qualify)
+  - permanent-rules-pending.json is updated with any patterns at permanent_rule threshold
+  - reflection-[run_id].json is written with: run_id, reflected_at, signals_collected,
+    patterns_updated, new_patterns, promotions object, top_issues_this_run
+  - No file was written to working_dir
+  - No pattern has occurrence_count lower than in the previous run
+  - Confidence values are between 0.0 and 1.0
+  - All promotion_status values are one of: observed, soft_context, hard_constraint,
+    permanent_rule (pending confirmation)

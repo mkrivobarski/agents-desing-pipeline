@@ -1,0 +1,215 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "pipeline-config.schema.json",
+  "title": "PipelineConfig",
+  "description": "Configuration schema for a design pipeline run. Controls elicitation mode, working directory, input manifest, agent access, and output options.",
+  "type": "object",
+  "required": ["project_name", "working_dir", "elicitation_mode"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "Schema reference"
+    },
+    "project_name": {
+      "type": "string",
+      "description": "Human-readable project name. Used for namespacing output files and run-history entries.",
+      "minLength": 1
+    },
+    "working_dir": {
+      "type": "string",
+      "description": "Absolute path to the pipeline working directory. All agent file reads and writes MUST be scoped to this directory. No agent may access paths outside this directory without explicit codebase_access permission.",
+      "pattern": "^(/|[A-Za-z]:\\\\)"
+    },
+    "pipeline_memory_dir": {
+      "type": "string",
+      "description": "Absolute path to the shared pipeline memory directory. Only reflection-agent writes here; all other agents may read pattern files. Defaults to {working_dir}/../pipeline-memory/",
+      "pattern": "^(/|[A-Za-z]:\\\\)"
+    },
+    "elicitation_mode": {
+      "type": "string",
+      "enum": ["FAST", "SCAN", "FULL", "DELTA"],
+      "description": "Controls how the pipeline gathers requirements from the user.\n  FAST: Figma URL provided; 3 targeted questions; skips full requirements interview.\n  SCAN: PRD or brief provided; gap-fill questions only.\n  FULL: Vague or no input; 3 elicitation phases with review gates.\n  DELTA: Prior run exists in run-history.json; only scope-change questions asked."
+    },
+    "figma_url": {
+      "type": "string",
+      "format": "uri",
+      "description": "Figma file URL. Required for FAST and DELTA modes, and for all runs that use the Figma-first pipeline path.",
+      "pattern": "^https://www\\.figma\\.com/"
+    },
+    "figma_page": {
+      "type": "string",
+      "description": "Name of the Figma page to target. If omitted, the agent uses the current page."
+    },
+    "prior_run_id": {
+      "type": "string",
+      "description": "Run ID from run-history.json to use as baseline for DELTA mode. Required when elicitation_mode is DELTA."
+    },
+    "pipeline_path": {
+      "type": "string",
+      "enum": ["figma_first", "brief_first", "auto"],
+      "default": "auto",
+      "description": "Which pipeline path to execute.\n  figma_first: Start from existing Figma file (requires figma_url).\n  brief_first: Start from requirements/brief (no Figma file yet).\n  auto: Detect based on whether figma_url is provided."
+    },
+    "stages": {
+      "type": "object",
+      "description": "Per-stage enable/disable and configuration overrides.",
+      "additionalProperties": false,
+      "properties": {
+        "requirements_intake": { "$ref": "#/definitions/stageConfig" },
+        "flow_architecture": { "$ref": "#/definitions/stageConfig" },
+        "wireframe_strategy": { "$ref": "#/definitions/stageConfig" },
+        "token_extraction": { "$ref": "#/definitions/stageConfig" },
+        "token_mapping": { "$ref": "#/definitions/stageConfig" },
+        "component_resolution": { "$ref": "#/definitions/stageConfig" },
+        "organism_composition": { "$ref": "#/definitions/stageConfig" },
+        "figma_instruction_writing": { "$ref": "#/definitions/stageConfig" },
+        "design_validation": { "$ref": "#/definitions/stageConfig" },
+        "consistency_analysis": { "$ref": "#/definitions/stageConfig" },
+        "consistency_fixing": { "$ref": "#/definitions/stageConfig" },
+        "brand_compliance": { "$ref": "#/definitions/stageConfig" },
+        "motion_spec": { "$ref": "#/definitions/stageConfig" },
+        "prototype_linking": { "$ref": "#/definitions/stageConfig" },
+        "design_review": { "$ref": "#/definitions/stageConfig" },
+        "delivery_sequencing": { "$ref": "#/definitions/stageConfig" },
+        "reflection": { "$ref": "#/definitions/stageConfig" }
+      }
+    },
+    "checkpoints": {
+      "type": "object",
+      "description": "Mid-pipeline user review gates. All enabled by default.",
+      "additionalProperties": false,
+      "properties": {
+        "A": {
+          "type": "boolean",
+          "default": true,
+          "description": "Checkpoint A: Post-Stage 1 (requirements). Enabled when elicitation_mode is FULL or SCAN. User reviews inferred requirements before proceeding."
+        },
+        "B": {
+          "type": "boolean",
+          "default": true,
+          "description": "Checkpoint B: Post-Stage 4 (token mapping + component manifest). Always enabled. Last gate before Figma execution. User reviews layout/component plan."
+        },
+        "C": {
+          "type": "boolean",
+          "default": true,
+          "description": "Checkpoint C: Post-first-screen Figma execution. Always enabled. User confirms visual direction before remaining screens are built."
+        }
+      }
+    },
+    "access": {
+      "type": "object",
+      "description": "Access control configuration for agents.",
+      "additionalProperties": false,
+      "properties": {
+        "codebase_access": {
+          "type": "boolean",
+          "default": false,
+          "description": "If true, delivery-sequencer may read the user's codebase to produce code-connect mappings and component import paths. Disabled by default."
+        },
+        "codebase_root": {
+          "type": "string",
+          "description": "Absolute path to the codebase root. Required when codebase_access is true.",
+          "pattern": "^(/|[A-Za-z]:\\\\)"
+        },
+        "codebase_include_patterns": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Glob patterns for files the delivery-sequencer may read from the codebase (e.g., ['src/components/**/*.tsx'])."
+        },
+        "figma_write_agents": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "List of agent names explicitly permitted to execute write operations on the Figma file. Agents not in this list must treat the Figma file as read-only.",
+          "default": [
+            "figma-instruction-writer",
+            "prototype-linker",
+            "organism-composer",
+            "consistency-fixer",
+            "motion-spec-agent"
+          ]
+        }
+      }
+    },
+    "output": {
+      "type": "object",
+      "description": "Output options.",
+      "additionalProperties": false,
+      "properties": {
+        "token_formats": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["json", "css", "typescript", "sass"]
+          },
+          "default": ["json", "css", "typescript"],
+          "description": "Which token export formats to generate."
+        },
+        "platform": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["ios", "android", "web", "desktop"]
+          },
+          "description": "Target platforms for motion specs and layout dimensions."
+        },
+        "include_motion_spec": {
+          "type": "boolean",
+          "default": true,
+          "description": "If true, motion-spec-agent runs and produces motion-spec.json."
+        },
+        "include_brand_compliance": {
+          "type": "boolean",
+          "default": false,
+          "description": "If true, brand-compliance-agent runs after delivery-sequencer."
+        }
+      }
+    },
+    "meta": {
+      "type": "object",
+      "description": "Metadata about this config file.",
+      "additionalProperties": false,
+      "properties": {
+        "created_at": { "type": "string", "format": "date-time" },
+        "created_by": { "type": "string" },
+        "pipeline_version": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$" },
+        "notes": { "type": "string" }
+      }
+    }
+  },
+  "definitions": {
+    "stageConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether this stage runs in the pipeline."
+        },
+        "max_retries": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 5,
+          "default": 1,
+          "description": "Maximum number of correction loop iterations for this stage."
+        },
+        "skip_if_unchanged": {
+          "type": "boolean",
+          "default": false,
+          "description": "If true and DELTA mode is active, skip this stage when no inputs have changed since the previous run."
+        }
+      }
+    }
+  },
+  "if": {
+    "properties": { "elicitation_mode": { "const": "DELTA" } },
+    "required": ["elicitation_mode"]
+  },
+  "then": {
+    "required": ["prior_run_id"],
+    "properties": {
+      "prior_run_id": { "minLength": 1 }
+    }
+  }
+}

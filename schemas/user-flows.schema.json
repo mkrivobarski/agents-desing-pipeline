@@ -1,0 +1,134 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "user-flows.schema.json",
+  "title": "User Flows",
+  "description": "Navigation graph and user flow definitions produced by the flow-architect agent.",
+  "type": "object",
+  "required": ["meta", "entry_points", "nodes", "edges", "flows"],
+  "additionalProperties": false,
+  "properties": {
+    "meta": {
+      "type": "object",
+      "required": ["generated_from", "generated_at", "total_screens", "total_nodes", "total_edges"],
+      "additionalProperties": false,
+      "properties": {
+        "generated_from": { "type": "string", "const": "requirements.json" },
+        "generated_at": { "type": "string", "format": "date-time" },
+        "total_screens": { "type": "integer", "minimum": 0 },
+        "total_nodes": { "type": "integer", "minimum": 0 },
+        "total_edges": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "entry_points": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["entry_id", "type", "screen_id"],
+        "additionalProperties": false,
+        "properties": {
+          "entry_id": { "type": "string" },
+          "type": {
+            "type": "string",
+            "enum": ["app_launch", "deep_link", "auth_gate", "modal_trigger", "tab_root"]
+          },
+          "screen_id": { "type": "string" },
+          "condition": { "oneOf": [{ "type": "null" }, { "type": "string" }] }
+        }
+      }
+    },
+    "nodes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["node_id", "screen_id", "state", "node_type", "label", "is_terminal", "is_entry_point"],
+        "additionalProperties": false,
+        "properties": {
+          "node_id": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]*__[a-z][a-z0-9_]*$",
+            "description": "Format: screen_id__state"
+          },
+          "screen_id": { "type": "string" },
+          "state": {
+            "type": "string",
+            "enum": ["default", "loading", "error", "empty", "success", "authenticated", "unauthenticated"]
+          },
+          "node_type": {
+            "type": "string",
+            "enum": ["screen", "modal", "bottom_sheet", "toast", "alert"]
+          },
+          "label": { "type": "string" },
+          "is_terminal": { "type": "boolean" },
+          "is_entry_point": { "type": "boolean" },
+          "data_requirements": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        }
+      }
+    },
+    "edges": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["edge_id", "from_node", "to_node", "trigger", "is_happy_path", "is_back_navigation"],
+        "additionalProperties": false,
+        "properties": {
+          "edge_id": { "type": "string" },
+          "from_node": { "type": "string", "description": "Must reference a valid node_id" },
+          "to_node": { "type": "string", "description": "Must reference a valid node_id" },
+          "trigger": {
+            "type": "object",
+            "required": ["type", "label"],
+            "additionalProperties": false,
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": ["user_action", "system_event", "timer", "deep_link", "auth_change"]
+              },
+              "label": { "type": "string" },
+              "element": { "oneOf": [{ "type": "null" }, { "type": "string" }] },
+              "condition": { "oneOf": [{ "type": "null" }, { "type": "string" }] }
+            }
+          },
+          "is_happy_path": { "type": "boolean" },
+          "is_back_navigation": { "type": "boolean" },
+          "animation_hint": {
+            "type": "string",
+            "enum": ["push", "pop", "fade", "modal_present", "modal_dismiss", "none"]
+          }
+        }
+      }
+    },
+    "flows": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["flow_id", "flow_name", "flow_type", "entry_node", "exit_nodes", "nodes", "edges"],
+        "additionalProperties": false,
+        "properties": {
+          "flow_id": { "type": "string" },
+          "flow_name": { "type": "string" },
+          "flow_type": {
+            "type": "string",
+            "enum": ["primary", "secondary", "error", "onboarding", "settings"]
+          },
+          "entry_node": { "type": "string" },
+          "exit_nodes": { "type": "array", "items": { "type": "string" } },
+          "nodes": { "type": "array", "items": { "type": "string" } },
+          "edges": { "type": "array", "items": { "type": "string" } },
+          "mermaid_diagram": { "type": "string" }
+        }
+      }
+    },
+    "unreachable_screens": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "architect_notes": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  }
+}

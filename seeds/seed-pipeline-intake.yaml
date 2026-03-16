@@ -1,0 +1,78 @@
+goal: >
+  Initialise a design pipeline run: read or create pipeline.config.json, determine the
+  correct elicitation mode (FAST/SCAN/FULL/DELTA/TARGETED), gather the minimum required
+  information from the user, and write pipeline.config.json, requirements.json skeleton, and
+  pipeline-intake.json to the working directory.
+
+context: |
+  This is the first agent in every pipeline run. It sets up the run context so all
+  downstream agents know where to read/write and what scope to operate within.
+
+  Elicitation modes:
+    FAST     — Figma URL provided; 3 questions; no gate required
+    SCAN     — PRD/brief present in working_dir; gap questions only; Gate A before proceeding
+    FULL     — No input; 3-phase interview with Gate A (screen list) + Gate B (full requirements)
+    DELTA    — Prior run exists; 3 scope-change questions; compute screens_to_run subset
+    TARGETED — annotation-targets.json present in working_dir OR elicitation_mode is TARGETED;
+               no interview — instructions come from Figma plugin queue.
+               If annotation-targets.json is absent, call figma_read_pipeline_queue to build it.
+               If queue is empty, stop and notify user.
+               Sets all_screens: false; skips requirements-analyst, flow-architect,
+               wireframe-strategist, journey-mapper, lo-fi-builder, creative-director, and
+               token-system-builder unless targeted-intake-agent's delta analysis requires them.
+
+  Auto-detection order (when elicitation_mode is "auto"):
+    1. annotation-targets.json present in working_dir → TARGETED
+    2. Figma URL present + no brief file → FAST
+    3. PRD/brief file in working_dir → SCAN
+    4. prior_run_id present → DELTA
+    5. Otherwise → FULL
+
+  Working directory containment is critical:
+    working_dir in pipeline.config.json defines the absolute boundary for all agent I/O.
+    No agent may read or write outside this directory without explicit codebase_access permission.
+
+  Access containment rules:
+    - figma_write_agents list must be populated: only listed agents may call figma_execute
+      with write operations (create, mutate, delete nodes)
+    - codebase_access defaults to false; only enabled if user explicitly requests it and
+      provides codebase_root path
+
+constraints:
+  - Read pipeline.config.json first; validate structure (project_name, working_dir,
+    elicitation_mode are required); if missing, ask user for bootstrap values
+  - Elicitation questions must be minimal: FAST=3, SCAN=≤5, FULL=phased, DELTA=3, TARGETED=0
+  - In FULL mode, Gate A (screen list) and Gate B (full requirements review) are MANDATORY
+    — the agent must not proceed without explicit user confirmation at each gate
+  - FAST, DELTA, and TARGETED modes proceed without gates unless user requests review
+  - In TARGETED mode: if annotation-targets.json is absent, call figma_read_pipeline_queue
+    before writing any other artifact; stop with a notification if the queue is empty
+  - Write pipeline.config.json as the FIRST file written; include resolved working_dir
+    as absolute path
+  - The intake_notes field in pipeline-intake.json MUST include the containment reminder:
+    "All agents must read and write only within: [working_dir]"
+  - figma_write_agents in pipeline.config.json MUST default to:
+    ["figma-instruction-writer", "prototype-linker", "organism-composer",
+     "consistency-fixer", "motion-spec-agent"]
+    unless the user explicitly overrides this list
+  - requirements.json skeleton must be valid JSON even if many values are "TBD"
+  - run_id format: run_YYYYMMDD_HHMMSS (using current UTC timestamp)
+
+acceptance_criteria:
+  - pipeline.config.json is written first and is valid JSON conforming to
+    pipeline-config.schema.json
+  - pipeline.config.json contains: project_name, working_dir (absolute path),
+    elicitation_mode, access.figma_write_agents (array with ≥1 entry)
+  - pipeline-intake.json is written and valid JSON with: run_id, initialised_at,
+    elicitation_mode, working_dir, gates_enabled, figma_write_agents, intake_notes
+  - intake_notes contains the containment reminder string
+  - requirements.json is written and valid JSON with at least: meta.project_name,
+    screens[] (may have TBD entries), flows[] (may be empty), design_tokens (may have TBD)
+  - In FULL mode: Gate A confirmation was received before Phase 3 questions
+  - In FULL mode: Gate B confirmation was received before writing final requirements.json
+  - In DELTA mode: screens_to_run is computed and written to pipeline.config.json
+  - In TARGETED mode: annotation-targets.json exists in working_dir before pipeline-intake.json is written
+  - In TARGETED mode: all_screens is false in pipeline.config.json
+  - No file was written outside working_dir
+  - elicitation_mode in output files matches the resolved (not necessarily configured) mode
+

@@ -1,0 +1,84 @@
+goal: "Make all open visual design decisions — colour palette, typography, iconography, layout density, shape personality, image treatment, and motion register — and write creative-direction.json as the authoritative visual specification for downstream agents"
+
+context: |
+  The creative-director agent runs after requirements-analyst, before token-system-builder.
+  It is the single place where all unspecified visual decisions are made.
+
+  Input files:
+    - reference-materials.json — PRIMARY VISUAL ANCHOR: brand assets with extracted colours,
+      fonts, border radius style; mood references; typography references; imagery references;
+      named references to research (produced by requirements-analyst)
+    - requirements.json — brand constraints, explicit colour/typography specs, product domain,
+      platform targets, personas, competitive references
+    - journey-map.json — if available; emotional highs and lows inform motion and colour mood
+
+  Resolution order for any visual property:
+    1. Extracted value from brand_assets in reference-materials.json → source: "brief"
+    2. Explicit value in requirements.json design_tokens → source: "brief"
+    3. Mood/style signal from mood_references or imagery_references → source: "creative_director"
+       with rationale citing the mood reference
+    4. Named reference with fetch_recommended: true → research it, then decide
+    5. No reference → deliberate creative choice from first principles
+    - Any brand guideline files in the working directory (brand.json, BRAND.md, etc.)
+
+  Decision domains:
+    1. Colour palette — primary brand scale (50–900), accent scale, neutral scale with
+       temperature, dark mode base, feedback colours, personality
+       (expressive/restrained/monochromatic/duotone)
+    2. Typography — heading and body typeface selection (specific Google Fonts or licensed),
+       full type scale with sizes/weights/line-heights/tracking, personality
+       (compact/balanced/spacious/editorial)
+    3. Iconography — specific icon library (lucide/heroicons/phosphor/material-symbols/feather),
+       style (outlined/filled/duotone), size scale (sm/md/lg px)
+    4. Layout — grid density (dense/standard/airy), base unit, page margins, content max-width
+    5. Shape — border radius personality (sharp/soft/rounded/pill/mixed), per-component defaults
+       (button, input, card, modal, chip), elevation strategy (flat/subtle/layered)
+    6. Media — photography style, illustration style, image treatment
+       (clean/tinted/gradient-overlay/greyscale), standard aspect ratios
+    7. Motion — register (instant/snappy/smooth/expressive), primary easing curve,
+       duration scale in ms
+
+  Research behaviour:
+    - If requirements.json contains competitive_references or product domain implies a strong
+      visual category, use WebSearch to research current visual trends in that space
+    - If reference URLs are provided, use WebFetch to extract their colour, type, and icon choices
+    - Research informs decisions — it does not determine them; the agent always makes a final
+      deliberate choice that may align with or diverge from market norms
+
+  Resolution priority:
+    1. Explicit value in existing theme file in working directory
+    2. source: "brief" value from requirements.json
+    3. Creative director's deliberate decision (source: "creative_director" + rationale)
+    4. Never: "TBD", empty fields, or generic safe defaults without documented reasoning
+
+  Every source: "creative_director" field must have a non-empty rationale string explaining why
+  that specific choice fits the product's context, audience, and emotional register.
+
+constraints:
+  - "Every field in creative-direction.json must be filled — no TBD values"
+  - "Every source: creative_director decision must have a non-empty rationale"
+  - "Colour decisions must be internally consistent — neutral temperature matches primary brand undertone"
+  - "Typography pairings must be intentional — if using two families they must contrast (geometric + humanist, or serif + sans)"
+  - "design_statement must be product-specific, not generic design language"
+  - "Never invent brand colours that contradict explicit brief values"
+  - "If brief specifies a colour, work within that colour family for all brand scale decisions"
+  - "Icon library must be a specific named library — not 'a clean icon set'"
+  - "Typeface must be a specific named font — not 'a humanist sans-serif'"
+  - "Write creative-direction.json before declaring completion"
+  - "All file reads and writes must be scoped to the pipeline working directory"
+
+acceptance_criteria:
+  - "creative-direction.json is written to the working directory"
+  - "colour.primary.scale has all 10 steps (50–900) with non-empty hex values"
+  - "colour.neutral.scale has all 10 steps with non-empty hex values"
+  - "colour.feedback has error, warning, success, info with both light and dark hex values"
+  - "typography.heading_family.name is a specific named typeface (not a generic descriptor)"
+  - "typography.body_family.name is a specific named typeface"
+  - "typography.scale has all 10 entries (display, headline1–3, title, body_lg, body, body_sm, label, caption) with size, weight, line_height, and tracking"
+  - "iconography.library is one of: lucide, heroicons, phosphor, material-symbols, feather, custom"
+  - "shape.personality is one of: sharp, soft, rounded, pill, mixed"
+  - "shape.component_defaults has button, input, card, modal, chip entries"
+  - "motion.register is one of: instant, snappy, smooth, expressive"
+  - "meta.design_statement is non-empty and product-specific"
+  - "Every source: creative_director entry has a non-null rationale string"
+  - "No field contains the string 'TBD'"

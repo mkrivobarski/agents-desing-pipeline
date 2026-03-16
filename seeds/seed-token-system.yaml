@@ -1,0 +1,187 @@
+goal: "Build the Figma Variable system (Primitives → Semantic → Component collections) from creative-direction.json and produce token-map.json with variable_id fields for every token"
+
+context: |
+  The token-system-builder agent reads creative-direction.json (primary source),
+  screen-blueprints.json (slot coverage), and requirements.json (constraint overrides),
+  then builds exactly three Figma Variable collections in strict creation order.
+  It merges with any existing variables rather than duplicating or deleting.
+
+  Inputs:
+    - creative-direction.json — primary source for colour scales, typography, radius, spacing
+    - screen-blueprints.json — slot types requiring Component collection coverage
+    - requirements.json — brief-provided constraint overrides
+    - Theme files discovered via Glob/Grep: tokens.json, tailwind.config.*, variables.css,
+      _variables.scss, theme.ts, DESIGN_SYSTEM.md
+
+  Resolution priority (highest wins):
+    1. Explicit value in an existing theme file (committed in codebase)
+    2. source: "brief" value in creative-direction.json
+    3. source: "creative_director" value in creative-direction.json
+    4. Built-in fallback (log a warning if reached)
+
+  ─── THREE COLLECTIONS ──────────────────────────────────────────────────────
+
+  Collection 1 — Primitives (single mode: Default)
+    Color/Brand/[name]/50–900  ← from creative-direction.json colour.primary.scale
+    Color/Brand/[accent.name]/50–900  ← from colour.accent.scale (if accent.name non-null)
+    Color/Neutral/50–900  ← from colour.neutral.scale
+    Color/White → #FFFFFF
+    Color/Black → #000000
+    Color/Transparent → #FFFFFF00
+    Spacing/0, 4, 8, 12, 16, 20, 24, 32, 40, 48, 64, 80, 96
+    Radius/none(0), xs(2), sm(4), md(8), lg(12), xl(16), 2xl(24), full(9999)
+      ← override with creative-direction.json shape.radius_values
+    Typography/FontSize/xs–4xl  ← from creative-direction.json typography.scale
+    Typography/LineHeight/tight(1.25), normal(1.5), relaxed(1.75)
+    Typography/FontWeight/regular(400), medium(500), semibold(600), bold(700)
+
+  Collection 2 — Semantic (two modes: Light, Dark)
+    Color/Background/default, elevated, overlay, inverse
+      Dark default: use creative-direction.json colour.dark_mode_base.hex
+    Color/Text/primary, secondary, disabled, inverse, link
+    Color/Border/default, subtle, strong
+    Color/Interactive/default, hover, pressed, disabled, focus_ring
+    Color/Feedback/error, warning, success, info
+      ← resolved values from creative-direction.json colour.feedback.*
+    Spacing/Component/xs(→Spacing/4), sm(→Spacing/8), md(→Spacing/16), lg(→Spacing/24)
+    Spacing/Layout/page_margin, section_gap, content_gap
+    Radius/Component/sm, md, lg, pill
+      ← mapped from creative-direction.json shape.component_defaults per type
+
+    Semantic values must be set as aliases pointing to Primitive variable IDs:
+      { variableId: "VariableID:semantic_id", modeId: "light_mode_id", value: "VariableID:prim_neutral_900" }
+
+  Collection 3 — Component (single mode: Default)
+    Button/Background/default, hover, pressed, disabled
+    Button/Text/default, disabled
+    Button/Border/default (null — no border by default)
+    Button/Radius → Semantic/Radius/Component/md
+    Input/Background/default, focused, error, disabled
+    Input/Border/default, focused, error, disabled
+    Input/Text/default, placeholder
+    Input/Radius → Semantic/Radius/Component/sm
+    Card/Background, Border, Radius → Semantic/Radius/Component/lg
+    + extend to cover every slot_type found in screen-blueprints.json
+
+  ─── MERGE STRATEGY ──────────────────────────────────────────────────────────
+
+  Before creating any variables:
+    1. Call figma_get_variables to retrieve all existing variables in the file
+    2. For each variable in the create list:
+       - Exists with correct value → skip, record variable_id
+       - Exists with wrong value → update via figma_batch_update_variables
+       - Missing → create via figma_batch_create_variables
+    3. Never delete variables outside the create list
+
+  ─── BATCH CREATION RULES ─────────────────────────────────────────────────
+
+  Always use batch tools — one call per tier, never per-variable:
+
+    figma_batch_create_variables({
+      collectionId: "...",
+      variables: [
+        { name: "Color/Brand/Blue/500", resolvedType: "COLOR", valuesByMode: { "mode_id": "#3B82F6" } },
+        { name: "Spacing/16",           resolvedType: "FLOAT", valuesByMode: { "mode_id": 16 } }
+      ]
+    })
+
+  Creation order is strict: commit ALL Primitives before Semantic, ALL Semantic before Component.
+
+  ─── WCAG CONTRAST CHECK ──────────────────────────────────────────────────
+
+  After building Semantic collection, for every Text/X + Background/Y pair in Light mode:
+    - Compute contrast ratio using WCAG relative luminance formula
+    - WCAG AA threshold: ≥ 4.5:1 for normal text
+    - Any pair below threshold → add to contrast_failures array
+    - contrast_failures must be empty before declaring completion
+
+  ─── token-map.json SCHEMA ──────────────────────────────────────────────────
+
+  {
+    "meta": {
+      "generated_from": ["creative-direction.json", "screen-blueprints.json", "requirements.json"],
+      "theme_files_discovered": [],
+      "generated_at": "ISO8601",
+      "figma_collections": {
+        "primitives": { "collection_id": "...", "mode_ids": { "Default": "..." } },
+        "semantic":   { "collection_id": "...", "mode_ids": { "Light": "...", "Dark": "..." } },
+        "component":  { "collection_id": "...", "mode_ids": { "Default": "..." } }
+      },
+      "token_count": 0,
+      "coverage_score": 0.0,
+      "coverage_threshold": 90.0
+    },
+    "token_registry": [
+      {
+        "token_id": "Semantic/Color/Interactive/default",
+        "category": "color",
+        "collection": "semantic",
+        "resolved_value": "#3B82F6",
+        "variable_id": "VariableID:123:456",
+        "mode_values": { "Light": "#3B82F6", "Dark": "#60A5FA" },
+        "css_variable": "--color-interactive-default",
+        "aliases_from": "Primitives/Color/Brand/Blue/500"
+      }
+    ],
+    "slot_token_maps": [
+      {
+        "screen_id": "string",
+        "slot_id": "string",
+        "slot_type": "string",
+        "token_assignments": {
+          "background_color": "Component/Button/Background/default",
+          "foreground_color": "Component/Button/Text/default",
+          "border_color": null,
+          "border_radius": "Component/Button/Radius",
+          "border_width": null,
+          "padding_horizontal": "Semantic/Spacing/Component/md",
+          "padding_vertical": "Semantic/Spacing/Component/sm",
+          "gap": "Semantic/Spacing/Component/xs",
+          "font_size": "Primitives/Typography/FontSize/base",
+          "font_weight": "Primitives/Typography/FontWeight/semibold",
+          "line_height": "Primitives/Typography/LineHeight/normal",
+          "icon_size": null,
+          "elevation": null,
+          "opacity": null
+        },
+        "contrast_check": {
+          "foreground_token": "Component/Button/Text/default",
+          "background_token": "Component/Button/Background/default",
+          "ratio": 4.7,
+          "wcag_aa_pass": true,
+          "wcag_aaa_pass": false
+        }
+      }
+    ],
+    "missing_tokens": [],
+    "contrast_failures": [],
+    "proposed_aliases": []
+  }
+
+constraints:
+  - "Read creative-direction.json before building any collection — it is the primary source for all colour, typography, radius, and spacing decisions"
+  - "Use figma_batch_create_variables and figma_batch_update_variables exclusively — never single-variable calls"
+  - "Every token in token_registry MUST have a non-null variable_id field"
+  - "Primitive variables must be committed before Semantic variables (alias values require primitive IDs)"
+  - "Semantic variables must be committed before Component variables"
+  - "Check figma_get_variables before creating — merge to avoid duplicates; never delete existing variables not in the create list"
+  - "All slot types from screen-blueprints.json must be covered in the Component collection and appear in slot_token_maps"
+  - "WCAG AA contrast ratio >= 4.5:1 for all Semantic Text/X + Background/Y pairs in Light mode"
+  - "contrast_failures array must be empty before declaring completion"
+  - "Coverage score threshold is 90% — pipeline cannot proceed below this"
+  - "Semantic and Component values must use variable alias syntax (VariableID:...) not raw hex where possible"
+  - "Write token-map.json before declaring completion"
+  - "All file reads and writes must be scoped to the pipeline working directory"
+
+acceptance_criteria:
+  - "token-map.json is written to the working directory"
+  - "meta.generated_from includes creative-direction.json"
+  - "meta.figma_collections contains collection_id and mode_ids for primitives (Default), semantic (Light, Dark), and component (Default)"
+  - "Every entry in token_registry has a non-null variable_id field"
+  - "meta.coverage_score is >= 90.0"
+  - "meta.contrast_failures array is empty (all WCAG AA pairs pass at 4.5:1)"
+  - "All slot types from screen-blueprints.json appear in slot_token_maps"
+  - "token_registry contains: all Primitive colour scale tokens (50–900 steps), all Semantic colour tokens with Light and Dark mode values, and Component tokens for every slot type in screen-blueprints.json"
+  - "missing_tokens array is present (may be empty if coverage is 100%)"
+  - "Semantic and Component variable values use alias references to Primitive variable IDs, not raw hex"
+  - "Brand colour scale token names match the colour names from creative-direction.json (not hardcoded 'Blue')"

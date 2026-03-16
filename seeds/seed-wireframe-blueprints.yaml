@@ -1,0 +1,104 @@
+goal: "Produce screen-blueprints.json from requirements.json and user-flows.json: a purely structural specification of every screen with layout zones, component slots, data requirements, responsive behaviour, and state variants — zero visual styling"
+
+context: |
+  The wireframe-strategist agent receives requirements.json and user-flows.json and
+  produces screen-blueprints.json. This is a pure structure document — no colours,
+  no font names, no brand language. Downstream agents (lo-fi-builder, token-system-builder,
+  component-architect) rely on it as the definitive structural spec.
+
+  One blueprint per screen. Every screen in requirements.json must have a blueprint,
+  including all non-default states (loading, error, empty).
+
+  Blueprint structure per screen:
+    screen_id, screen_name, platform list, layout_pattern, primary_focal_point,
+    reading_order, states (keyed object), navigation_controls, accessibility_notes,
+    blueprint_notes
+
+  layout_pattern (choose one):
+    single_column | two_column | bottom_tabs | top_tabs | drawer | split_view |
+    modal | full_bleed
+
+  reading_order (choose one):
+    f_pattern | z_pattern | linear | hub_spoke
+
+  States object — keys are state names (default, loading, error, empty, success — only
+  states listed in requirements.json for this screen). Each state contains a zones array.
+
+  Zone fields:
+    zone_id — one of: header | subheader | hero | content | sidebar | footer |
+               overlay | toast_area
+    is_fixed — boolean, true for header/footer zones that do not scroll
+    is_scrollable — boolean, true for main content zones
+    above_fold — boolean (mobile fold ≈ 667px, tablet ≈ 1024px, desktop ≈ 1440px)
+    loading_strategy — skeleton | spinner | shimmer | none
+    error_strategy — inline_error | full_page_error | toast | silent_fail
+    slots array
+
+  Slot fields:
+    slot_id — snake_case, unique within the screen (prefix with screen_id if needed)
+    slot_type — semantic vocabulary (see below)
+    label — human-readable description of what goes here
+    repeat — boolean, true for list/grid patterns
+    repeat_count_hint — integer or null, estimated number of repeated items
+    conditional — boolean, true if slot only appears under a condition
+    condition_expression — string or null, plain boolean logic
+    data_binding — API endpoint or data field, or null
+    data_required — boolean, whether screen cannot render without this data
+    interactions — array of: tap | swipe | long_press | hover | focus
+    content_priority — integer 1 (highest, above fold) to 5 (lowest)
+    responsive — object with mobile, tablet, desktop layout behaviour strings
+    notes — string
+
+  Slot type vocabulary (semantic names only — never product/brand/library-specific):
+    navigation_bar, app_bar, search_field, form_field, input, button_primary,
+    button_secondary, icon_button, card, list_item, hero, image, heading, body_text,
+    caption, divider, spacer, avatar, badge, chip, tab_bar, bottom_sheet, modal_overlay,
+    empty_state_illustration, error_message, skeleton, spinner, progress_bar,
+    data_table, chart, toggle, checkbox, radio, select, textarea
+
+  primary_focal_point must reference a real slot_id in the default state.
+
+  navigation_controls object:
+    back_button, close_button, tab_bar, drawer_trigger — all booleans
+
+  State blueprint rules:
+    default   — full slot set representing the normal rendered screen
+    loading   — data-driven slots replaced with skeleton/spinner slots
+    error     — centred error_message slot + button_primary for retry/back
+    empty     — empty_state_illustration + body_text + optional button_primary CTA
+
+  Responsive behaviour strings (mobile/tablet/desktop fields):
+    full_width | constrained_center | sidebar_layout | hidden | stacked | inline
+
+  The strategist_notes array at root level captures any structural decisions made
+  that are not directly derivable from requirements.json or user-flows.json, or any
+  screens where the structure was inferred rather than specified.
+
+constraints:
+  - "Output is structure only — zero colour, font names, hex values, or brand language anywhere"
+  - "Every screen from requirements.json must have a blueprint including all its non-default states"
+  - "slot_type values must come only from the defined vocabulary — no product or brand-specific names"
+  - "slot_id values must be snake_case and unique within their screen"
+  - "primary_focal_point must reference a slot_id that exists in the default state's zones"
+  - "Every slot with repeat: true must have a repeat_count_hint (integer, even if estimated)"
+  - "All list/feed screens must have an empty state blueprint"
+  - "All network-dependent screens must have both loading and error state blueprints"
+  - "loading state blueprints replace data-driven slots with skeleton or spinner slot types"
+  - "error state blueprints must contain at minimum an error_message slot and a button_primary recovery slot"
+  - "above_fold determination: mobile ≈ 667px viewport, tablet ≈ 1024px, desktop ≈ 1440px"
+  - "Write screen-blueprints.json before declaring completion"
+  - "All file reads and writes must be scoped to the pipeline working directory"
+
+acceptance_criteria:
+  - "screen-blueprints.json is written to the working directory"
+  - "meta.total_blueprints equals the number of entries in the blueprints array"
+  - "Every screen_id from requirements.json appears in the blueprints array"
+  - "No blueprint is missing a state that requirements.json lists for that screen"
+  - "No slot_type value falls outside the defined vocabulary"
+  - "All slot_id values are snake_case and unique within their parent screen"
+  - "Every slot with repeat: true has a non-null integer repeat_count_hint"
+  - "Every screen with a list_item or card slot has empty, loading, and error state blueprints"
+  - "Every loading state blueprint contains only skeleton and spinner slot types for data-driven slots"
+  - "Every error state blueprint contains at least one error_message slot and one button_primary slot"
+  - "primary_focal_point on every blueprint references a slot_id present in that blueprint's default state"
+  - "strategist_notes is present at root level (may be empty array)"

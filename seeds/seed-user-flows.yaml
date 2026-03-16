@@ -1,0 +1,93 @@
+goal: "Transform requirements.json into user-flows.json and user-flows.mermaid: a complete directed navigation graph covering happy paths, error states, empty states, loading states, and back navigation"
+
+context: |
+  The flow-architect agent receives requirements.json (produced by requirements-analyst)
+  and constructs a typed directed graph where every node is a screen+state combination
+  and every edge is a typed navigation event.
+
+  Key architectural point: nodes are screen+STATE combinations, not just screens.
+  A screen with states [default, loading, error, empty] produces four nodes:
+    home__default, home__loading, home__error, home__empty
+  Each state is a distinct node because it has different outbound edges.
+
+  The agent produces two output files:
+
+  1. user-flows.json — the machine-readable navigation graph:
+
+     meta:
+       generated_from: "requirements.json"
+       generated_at: ISO8601
+       total_screens, total_nodes, total_edges
+
+     entry_points: list of entry_id, type (app_launch/deep_link/auth_gate/modal_trigger/
+       tab_root), screen_id, condition
+
+     nodes: list of node_id (screen_id__state), screen_id, state
+       (default/loading/error/empty/success), node_type (screen/modal/bottom_sheet/toast/alert),
+       label, is_terminal, is_entry_point, data_requirements
+
+     edges: list of edge_id, from_node, to_node, trigger (type, label, element, condition),
+       is_happy_path, is_back_navigation, animation_hint (push/pop/fade/modal_present/
+       modal_dismiss/none)
+
+     flows: list of flow_id, flow_name, flow_type (primary/secondary/error/onboarding/
+       settings), entry_node, exit_nodes, nodes list, edges list, mermaid_diagram string
+       (one per flow, flowchart TD direction)
+
+     unreachable_screens: screen_ids not reachable from any entry point
+     architect_notes: ambiguities and resolutions
+
+  2. user-flows.mermaid — single Mermaid file with one diagram per flow separated by ---
+     and titled with the flow name. Node types:
+       ([Screen Name]) — rounded rectangles for screens
+       {Decision}      — diamonds for branch conditions
+       [Action/Event]  — plain rectangles for system events
+     Every edge labelled with its trigger action.
+
+  Graph coverage rules:
+    - Every screen_id from requirements.json must appear as at least one node
+    - Every non-root non-modal screen must have a back navigation edge
+    - Every network-dependent screen must have loading → default and loading → error edges
+    - Every error state must have a recovery edge (retry → loading, or back → parent)
+    - Every list/feed screen must have an empty state node with a CTA edge
+    - Decision branches must be mutually exclusive and collectively exhaustive
+
+  Entry point classification:
+    app_launch     — first screen on cold start
+    deep_link      — reachable via URL or push notification
+    auth_gate      — redirects based on auth state
+    modal_trigger  — appears as overlay
+    tab_root       — root screen of tab navigation
+
+  Animation hints follow platform conventions:
+    push/pop       — lateral navigation (drill-down/back)
+    modal_present/modal_dismiss — overlay navigation
+    fade           — tab switches, auth transitions
+    none           — instant/replace
+
+constraints:
+  - "Nodes are screen+state combinations — node_id format is screen_id__state (double underscore)"
+  - "Every screen_id from requirements.json must appear as at least one node"
+  - "Every node must be reachable from at least one entry point — flag unreachable in unreachable_screens"
+  - "Every non-root non-modal screen must have at least one back navigation edge (is_back_navigation: true)"
+  - "Every network-dependent screen must have nodes for its loading and error states"
+  - "Every error state node must have at least one recovery edge"
+  - "Edge conditions at decision points must be mutually exclusive and collectively exhaustive"
+  - "animation_hint must be one of: push, pop, fade, modal_present, modal_dismiss, none"
+  - "Each flow must include a mermaid_diagram string using flowchart TD syntax"
+  - "Write both user-flows.json and user-flows.mermaid before declaring completion"
+  - "All file reads and writes must be scoped to the pipeline working directory"
+
+acceptance_criteria:
+  - "user-flows.json is written to the working directory"
+  - "user-flows.mermaid is written to the working directory"
+  - "Every screen_id from requirements.json appears as at least one node in user-flows.json"
+  - "meta.total_nodes equals the count of entries in the nodes array"
+  - "meta.total_edges equals the count of entries in the edges array"
+  - "Every entry in entry_points references a screen_id that exists in the nodes array"
+  - "No edge references a node_id not present in the nodes array"
+  - "At least one node per network-dependent screen has state: 'loading' and at least one has state: 'error'"
+  - "Every error state node has at least one outbound recovery edge"
+  - "Every flow has a non-empty mermaid_diagram string beginning with 'flowchart TD'"
+  - "unreachable_screens is present at the root level (may be empty array)"
+  - "architect_notes is present at the root level (may be empty array)"

@@ -1,0 +1,94 @@
+goal: "Parse a design brief and any accompanying reference materials, then produce requirements.json and reference-materials.json conforming to the requirements-analyst agent spec"
+
+context: |
+  The requirements-analyst agent receives a design brief in any form — plain text, PDF,
+  markdown document, PRD, or URL — along with any reference materials mentioned or attached:
+  brand guideline files, mood board URLs, Figma share links, typography specimens,
+  icon library references, competitor names, or image style descriptions.
+
+  The agent produces two output files:
+
+  1. requirements.json — structured product requirements:
+       - meta: project name, version, created_at, source_documents, platform_targets, primary_personas,
+         design_system (name enum: material/ant-design/radix/chakra/shadcn/carbon/fluent/none,
+         version, figma_library_key, token_override_strategy, notes) — always present, name: "none" if
+         no external system is mentioned or implied
+       - screens: inventory of all screens with screen_id (snake_case), screen_name, description,
+         platform, states (default/loading/error/empty/success), entry_points, exit_points,
+         conditional_visibility, priority (p0/p1/p2), notes
+       - flows: user journeys with flow_id, flow_name, flow_type (primary/secondary/error/onboarding),
+         ordered screens list, description
+       - design_tokens: colours (brand/semantic/dark_mode), typography (font_families/type_scale),
+         spacing (base_unit/scale), shape, motion, elevation — values extracted from brief or reference
+         materials tagged source: "reference_material" or source: "inferred"
+       - component_hints: UI components mentioned or implied, with tier (atom/molecule/organism),
+         source (library/custom), screens_used_in
+       - constraints: accessibility (wcag_level, specific_requirements), performance, browser_support,
+         localization, brand_restrictions
+       - competitive_references: patterns_noted, differentiation_opportunities, design_inspiration
+         per competitor (fetched via WebFetch if URLs or names provided)
+       - analyst_notes: list of ambiguities and their resolutions
+
+  2. reference-materials.json — catalogue of every visual asset and reference found in the brief:
+       - meta: generated_from, generated_at, status (found|none_provided), total_references,
+         extraction_notes (errors for failed fetches)
+       - brand_assets: each asset with type (logo/brand_guidelines/style_guide/figma_file/design_system),
+         source_path_or_url, figma_file_key (if Figma URL), and extracted sub-object containing:
+           colours (role, hex, name), font_families (role, name, weights), border_radius_style,
+           spacing_base_unit_px, icon_library, logo_description, other_notes
+       - mood_references: visual quality annotations with source, visual_qualities list,
+         applicable_to dimensions (colour/typography/layout/iconography/imagery/motion/all)
+       - typography_references: specific font names with role, weights_available, style_notes
+       - imagery_references: photography/illustration/icon library style per screen or all
+       - named_references: competitor or design system names with context from brief,
+         fetch_recommended flag, notes for creative-director to research
+
+  Reference materials intake (section 1b) runs BEFORE all other sections. The agent scans
+  for every pointer to a visual or brand asset in the brief:
+    - Local file paths → read with Read tool; extract visual decisions
+    - URLs (brand kits, mood boards, Figma links) → fetch with WebFetch using a structured
+      extraction prompt targeting colours, fonts, border radius, icon library, image style
+    - Figma share URLs → extract file key from URL for figma_file_key field
+    - Named references (e.g. "inspired by Linear") → record in named_references with
+      fetch_recommended: true for creative-director to research later
+    - No references at all → set status: "none_provided" and note in analyst_notes
+
+  If a fetch fails, record the error in meta.extraction_notes and continue.
+
+  Design token values found in reference materials are tagged source: "reference_material"
+  with a reference_file field — never left as TBD.
+  Inferred values are tagged source: "inferred".
+  Missing values use "TBD" and are listed in analyst_notes.
+
+  Tools available:
+    - Read — for local brief files, brand guideline documents, attached assets
+    - Glob — to find theme files (tokens.json, tailwind.config.*, *.tokens.json, etc.)
+    - Grep — to extract token names and values from discovered files
+    - WebFetch — for online briefs, brand kit URLs, competitor sites, mood board URLs
+
+constraints:
+  - "Reference materials intake (section 1b) must run before building the screen inventory"
+  - "Every screen must have a snake_case screen_id, at least one state, and non-empty entry_points"
+  - "Design token values found in reference materials must use source: 'reference_material' — never TBD"
+  - "Inferred token values must use source: 'inferred'"
+  - "Only missing, unresolvable values use TBD — and each must appear in analyst_notes"
+  - "If a reference fetch fails, record in meta.extraction_notes and continue — never block"
+  - "competitive_references entries must be fetched via WebFetch when a URL or identifiable domain exists"
+  - "Figma share URLs must have their file key extracted into brand_assets[].figma_file_key"
+  - "All screen exit_points must reference a screen_id that exists elsewhere in the screens array"
+  - "Write both requirements.json and reference-materials.json before declaring completion"
+  - "All file reads and writes must be scoped to the pipeline working directory"
+
+acceptance_criteria:
+  - "requirements.json is written to the working directory"
+  - "reference-materials.json is written to the working directory"
+  - "reference-materials.json meta.status is 'found' if any reference was located, 'none_provided' if not"
+  - "Every screen in requirements.json has a snake_case screen_id, non-empty description, at least one state, and non-empty entry_points"
+  - "Every screen exit_point references a valid screen_id in the same screens array"
+  - "At least one user flow is defined connecting two or more screens"
+  - "design_tokens contains colours, typography, spacing, shape, and motion sections — values tagged with source field"
+  - "No design token value found in a reference material is marked TBD"
+  - "meta.design_system is always present — name is one of the valid enum values; 'none' if no external system is mentioned"
+  - "All ambiguities are listed in analyst_notes with their resolutions"
+  - "If any reference fetch failed, the error appears in reference-materials.json meta.extraction_notes"
+  - "competitive_references is present (may be empty array if none mentioned in brief)"

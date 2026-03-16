@@ -1,0 +1,128 @@
+goal: "Produce journey-map.json, journey-map.md, and a Figma 'Journey Maps' page with emotion-coded step cards per persona — the grounding human review artifact before any screen design begins"
+
+context: |
+  The journey-mapper agent receives requirements.json and produces three outputs.
+  It is the first artifact in the pipeline — no Figma components, no variables, no
+  screen design. It maps who uses the product, what they experience, and where the
+  friction and opportunity lies.
+
+  Input:
+    - requirements.json — screen inventory, user types, flows, constraints
+
+  Personas:
+    Derived from requirements.json primary_personas or inferred from screen purposes.
+    Minimum 1, maximum 4. Each persona has:
+      id — snake_case slug (e.g. returning_user)
+      name — descriptive label (e.g. "Returning Subscriber")
+      goal — one sentence: what they are trying to achieve
+      context — situation they are in when using the product
+      technical_comfort — low | medium | high
+      key_pain_points — 2–4 known frustrations extracted from requirements
+
+  Journey steps per persona:
+    Map the full arc from first contact to task completion (or abandonment).
+    Happy path first, then note where the journey diverges.
+    Each step has:
+      step_id — sequential slug (step_01, step_02, ...)
+      phase — UX phase name (Awareness | Onboarding | Core Use | Retention | Exit)
+      action — what the user does, in plain English
+      screen_ref — screen_id from requirements.json, or null for off-screen steps
+      touchpoint — screen | email | push | system | external
+      goal_alignment — high | medium | low
+      emotion — delighted | satisfied | neutral | frustrated | confused | blocked
+      pain_points — array of strings describing what could go wrong or causes friction
+      opportunities — array of strings describing design improvements for this step
+
+  Mermaid journey diagram per persona:
+    Type: journey (not flowchart). Satisfaction scores 1–5 derived from emotion:
+      delighted → 5, satisfied → 4, neutral → 3, frustrated → 2, confused → 2, blocked → 1
+
+    Format:
+      journey
+        title [Persona Name] — [Primary Flow Name]
+        section [Phase Name]
+          [Action label]: [score]: [Persona Name]
+
+  Figma Journey Maps page:
+    Page name: "Journey Maps" (find or create)
+    One SECTION per persona, named "Journey / [Persona Name]"
+    One step card per journey step inside the section
+
+    Step card: Rectangle 200 × 160, corner radius 8
+    Emotion fill colours (hardcoded — variables do not exist yet):
+      delighted  → #E8F5E9
+      satisfied  → #E3F2FD
+      neutral    → #F5F5F5
+      frustrated → #FFF3E0
+      confused   → #FFF8E1
+      blocked    → #FFEBEE
+
+    Text layers per card (load Inter fonts first):
+      Phase label: Inter Bold 10px, #757575, uppercase
+      Action: Inter SemiBold 13px, #212121
+      Emotion emoji: text node (😊 satisfied, 🤩 delighted, 😐 neutral, 😤 frustrated,
+                     😕 confused, 🚫 blocked)
+      Pain point (first item if any): Inter Regular 11px, #E53935, italic
+
+    Script structure: async IIFE via figma_execute
+      1. loadFontAsync for Inter Regular, SemiBold, Bold
+      2. Find or create "Journey Maps" page
+      3. setCurrentPageAsync
+      4. Create one Section per persona, append to page
+      5. Build step cards inside section
+      6. Return { page_id, section_ids: {} }
+
+    Critical: hardcoded values only — no variable bindings, no component instantiation.
+    Journey Maps page node IDs are never referenced by any downstream agent.
+
+  Output files:
+
+  1. journey-map.json:
+     meta: generated_from, generated_at, persona_count, figma_page_created,
+           figma_page_id
+     personas: array of persona objects each with id, name, goal, context,
+               technical_comfort, key_pain_points, journey (steps array),
+               mermaid_diagram string
+     cross_cutting_insights: array of insight strings applicable across personas
+     mapper_notes: array of ambiguity notes
+
+  2. journey-map.md:
+     Human-readable document with:
+       # User Journey Maps header
+       Project and generated date
+       ## Executive Summary (2–3 sentences)
+       ## Personas — one section per persona with:
+         Goal, Context
+         Journey table: Step | Phase | Action | Emotion | Pain Points
+         Key Opportunities list
+       ## Cross-Cutting Insights list
+
+  3. Figma "Journey Maps" page (created via figma_execute)
+
+constraints:
+  - "Use only hardcoded pastel/greyscale values — Figma Variables do not exist at this stage"
+  - "Never instantiate Figma components on the Journey Maps page"
+  - "Never bind variables on the Journey Maps page"
+  - "Journey map frame node IDs must never be referenced by any downstream pipeline agent"
+  - "All six emotion values must be supported: delighted, satisfied, neutral, frustrated, confused, blocked"
+  - "Each persona must have a complete journey covering the full arc from first contact to completion"
+  - "Mermaid diagrams must be syntactically valid journey type diagrams (not flowchart type)"
+  - "Satisfaction scores in Mermaid must map from emotion: delighted=5, satisfied=4, neutral=3, frustrated=2, confused=2, blocked=1"
+  - "step_id format is step_01, step_02, ... (two-digit zero-padded)"
+  - "screen_ref must be a screen_id from requirements.json or null — never an invented identifier"
+  - "Write journey-map.json and journey-map.md before declaring completion"
+  - "All file reads and writes must be scoped to the pipeline working directory"
+
+acceptance_criteria:
+  - "journey-map.json is written to the working directory"
+  - "journey-map.md is written to the working directory"
+  - "journey-map.json contains at least one persona with a journey of at least 4 steps"
+  - "Every step has step_id, phase, action, screen_ref, touchpoint, goal_alignment, emotion, pain_points, and opportunities fields"
+  - "All emotion values are one of: delighted, satisfied, neutral, frustrated, confused, blocked"
+  - "Every persona has a non-empty mermaid_diagram string beginning with 'journey'"
+  - "cross_cutting_insights is present (may be empty array if only one persona)"
+  - "mapper_notes is present (may be empty array)"
+  - "Figma 'Journey Maps' page exists with one section per persona"
+  - "Each section contains one card per journey step with the correct emotion fill colour"
+  - "journey-map.json meta.figma_page_created is true and meta.figma_page_id is non-null"
+  - "journey-map.md contains an Executive Summary section and at least one persona section with a journey table"

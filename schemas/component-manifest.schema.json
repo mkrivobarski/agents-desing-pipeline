@@ -1,0 +1,179 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "component-manifest.schema.json",
+  "title": "Component Manifest",
+  "description": "Per-screen component instance specifications produced by the component-resolver agent.",
+  "type": "object",
+  "required": ["meta", "component_library", "screens"],
+  "additionalProperties": false,
+  "properties": {
+    "meta": {
+      "type": "object",
+      "required": ["generated_from", "generated_at", "total_screens", "total_instances"],
+      "additionalProperties": false,
+      "properties": {
+        "generated_from": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "generated_at": { "type": "string", "format": "date-time" },
+        "total_screens": { "type": "integer", "minimum": 0 },
+        "total_instances": { "type": "integer", "minimum": 0 },
+        "custom_required_count": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "component_library": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["component_name", "category"],
+        "additionalProperties": false,
+        "properties": {
+          "component_name": { "type": "string" },
+          "component_key": { "oneOf": [{ "type": "null" }, { "type": "string" }] },
+          "figma_node_id": { "oneOf": [{ "type": "null" }, { "type": "string" }] },
+          "category": { "type": "string", "enum": ["atom", "molecule", "organism"] },
+          "variants": {
+            "type": "object",
+            "description": "Map of variant property names to allowed values arrays"
+          },
+          "props": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["name", "type", "required"],
+              "properties": {
+                "name": { "type": "string" },
+                "type": { "type": "string" },
+                "required": { "type": "boolean" },
+                "default": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "screens": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["screen_id", "screen_name", "states"],
+        "additionalProperties": false,
+        "properties": {
+          "screen_id": { "type": "string" },
+          "screen_name": { "type": "string" },
+          "states": {
+            "type": "object",
+            "required": ["default"],
+            "additionalProperties": false,
+            "properties": {
+              "default": { "$ref": "#/definitions/screenStateInstances" },
+              "loading": { "$ref": "#/definitions/screenStateInstances" },
+              "error": { "$ref": "#/definitions/screenStateInstances" },
+              "empty": { "$ref": "#/definitions/screenStateInstances" },
+              "success": { "$ref": "#/definitions/screenStateInstances" }
+            }
+          }
+        }
+      }
+    },
+    "custom_components_required": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["slot_id", "screen_id", "description", "suggested_name"],
+        "additionalProperties": false,
+        "properties": {
+          "slot_id": { "type": "string" },
+          "screen_id": { "type": "string" },
+          "description": { "type": "string" },
+          "suggested_name": { "type": "string" },
+          "figma_build_hint": { "type": "string" }
+        }
+      }
+    },
+    "resolver_notes": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  },
+  "definitions": {
+    "screenStateInstances": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "root_container": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "component_name": { "type": "string" },
+            "instance_id": { "type": "string" },
+            "width": {},
+            "height": {},
+            "layout_mode": { "type": "string", "enum": ["VERTICAL", "HORIZONTAL", "NONE"] },
+            "padding": {
+              "type": "object",
+              "properties": {
+                "top": { "type": "number" },
+                "right": { "type": "number" },
+                "bottom": { "type": "number" },
+                "left": { "type": "number" }
+              }
+            }
+          }
+        },
+        "instances": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/componentInstance" }
+        }
+      }
+    },
+    "componentInstance": {
+      "type": "object",
+      "required": ["instance_id", "slot_id", "zone_id", "component_name", "is_custom", "variant_properties", "props", "token_overrides", "layout", "repeat", "is_representative"],
+      "additionalProperties": false,
+      "properties": {
+        "instance_id": { "type": "string" },
+        "slot_id": { "type": "string" },
+        "zone_id": { "type": "string" },
+        "component_name": { "type": "string" },
+        "component_key": { "oneOf": [{ "type": "null" }, { "type": "string" }] },
+        "figma_node_id": { "oneOf": [{ "type": "null" }, { "type": "string" }] },
+        "is_custom": { "type": "boolean" },
+        "custom_description": { "oneOf": [{ "type": "null" }, { "type": "string" }] },
+        "variant_properties": {
+          "type": "object",
+          "description": "Key-value pairs of component variant properties"
+        },
+        "props": {
+          "type": "object",
+          "description": "Key-value pairs of component props. All required props must be present."
+        },
+        "token_overrides": {
+          "type": "object",
+          "description": "Token names (not raw values) for visual property overrides"
+        },
+        "layout": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "parent_instance_id": { "oneOf": [{ "type": "null" }, { "type": "string" }] },
+            "position_in_parent": { "type": "integer", "minimum": 0 },
+            "width": {},
+            "height": {},
+            "margin_top": {}
+          }
+        },
+        "repeat": { "type": "boolean" },
+        "repeat_count": { "oneOf": [{ "type": "null" }, { "type": "integer", "minimum": 1 }] },
+        "repeat_instances": {
+          "type": "array",
+          "items": { "type": "object" }
+        },
+        "is_representative": { "type": "boolean" },
+        "notes": { "type": "string" }
+      }
+    }
+  }
+}

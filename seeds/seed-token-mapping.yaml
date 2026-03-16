@@ -1,0 +1,20 @@
+goal: "SUPERSEDED — see seed-token-system.yaml"
+
+context: |
+  This seed (seed-token-mapping.yaml) described the token-mapper agent, which has been
+  replaced by the token-system-builder agent.
+
+  The token-system-builder:
+    - Builds Figma Variable collections (Primitives → Semantic → Component) directly
+    - Reads creative-direction.json as primary source for all colour/typography/radius values
+    - Produces token-map.json with variable_id fields for every token
+    - Uses figma_batch_create_variables and figma_batch_update_variables exclusively
+
+  Use seed-token-system.yaml for all pipeline runs.
+
+constraints:
+  - "This seed must not be used in new pipeline runs"
+  - "pipeline-runner.md should reference seed-token-system.yaml instead of this file"
+
+acceptance_criteria:
+  - "N/A — this seed is retired"

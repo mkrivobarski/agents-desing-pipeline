@@ -1,0 +1,138 @@
+goal: "Ingest a Figma file and extract its screens, design system tokens, component library, and styles into pipeline-compatible artifacts: figma-source.json and requirements.json"
+
+context: |
+  The figma-intake-agent runs as the first stage when a Figma file is the source of
+  truth (Figma-first path). It extracts full file structure, resolves all tokens, and
+  produces two pipeline-compatible output files.
+
+  Input: one of:
+    - Full Figma URL: https://www.figma.com/design/:fileKey/:name?node-id=X-Y
+    - Bare file key (24-character alphanumeric string)
+    - Path to existing figma-source.json for re-processing
+
+  Parse the file key from a URL by extracting the segment between '/design/' and the next '/'.
+
+  ─── PHASE 1: File Structure Discovery ────────────────────────────────────────
+
+  Call figma_get_file_data(verbosity="summary", depth=1) to read top-level document tree.
+  For each page, record:
+    - Page name
+    - Every top-level frame: nodeId, name, width, height
+  Skip component pages (named "Components", "Design System", "_DS", "Library", "Assets",
+  or whose direct children are all COMPONENT or COMPONENT_SET nodes).
+
+  ─── PHASE 2: Design System Extraction ────────────────────────────────────────
+
+  Call figma_get_design_system_kit(include=["tokens","components","styles"], format="full")
+  in one pass. If compressed or truncated, follow up separately:
+    figma_get_variables(resolveAliases=true, verbosity="standard", format="full")
+    figma_get_styles(verbosity="standard")
+
+  If figma_get_variables returns 403 (no Enterprise plan), fall back to figma_get_styles.
+
+  From the kit, collect:
+    - All variable collections, their modes (Light/Dark), variable count
+    - All resolved color, spacing, typography, radius, and motion tokens
+    - All published component names, keys, categories, variant properties
+
+  ─── PHASE 3: Component Library Inventory ─────────────────────────────────────
+
+  Call figma_search_components(query="", limit=25). Paginate if more results available.
+  For atoms and molecules of interest, call figma_get_component_details(componentKey).
+  Collect: component_name, component_key, inferred category (atom/molecule/organism), variants.
+
+  ─── PHASE 4: Frame Visual Sampling ───────────────────────────────────────────
+
+  For up to 10 representative frames (one per page or first 10 overall):
+    figma_get_component_image(nodeId, format="png", scale=1)
+  Store returned image URLs as previewUrl in figma-source.json. Failures → previewUrl: null.
+
+  ─── figma-source.json SCHEMA ─────────────────────────────────────────────────
+
+  {
+    "fileKey": "string",
+    "fileUrl": "https://www.figma.com/design/:fileKey/:name",
+    "extractedAt": "ISO8601",
+    "pages": [
+      {
+        "name": "string",
+        "isComponentPage": false,
+        "frames": [
+          { "nodeId": "123:456", "name": "Screen Name", "width": 390, "height": 844, "previewUrl": "string or null" }
+        ]
+      }
+    ],
+    "variableCollections": [
+      { "collectionId": "string", "collectionName": "string", "modes": ["Light","Dark"], "variableCount": 0 }
+    ],
+    "componentCount": 0,
+    "stylesCount": 0
+  }
+
+  ─── requirements.json SCHEMA (derived from Figma) ────────────────────────────
+
+  Map Figma data into requirements.json:
+
+  meta:
+    project_name: from file name or URL slug
+    version: "1.0.0"
+    created_at: ISO8601
+    source_documents: ["figma-source.json"]
+    platform_targets: infer from frame dimensions:
+      375–430px wide → ios / android
+      768px+         → web
+      1280px+        → desktop
+      default        → ["web"]
+
+  screens: one per non-component-page frame:
+    screen_id: snake_case from frame name (strip special chars, lowercase, spaces → _)
+    screen_name: frame name verbatim
+    description: "Extracted from Figma frame <nodeId> on page <pageName>"
+    platform: from width inference
+    states: ["default"]
+    priority: p0 if name contains Home/Login/Auth/Dashboard/Onboard; else p1
+    notes: include "figma_node_id: 123:456" for traceability
+
+  design_tokens:
+    Colour collections → colors.brand / colors.semantic
+    spacing/gap/padding variables → spacing.scale
+    radius/corner variables → shape
+    Typography styles → typography.type_scale
+    spacing.base_unit: smallest non-zero spacing token, default 8
+
+  component_hints: one per discovered published component:
+    component_name, component_key, category (atom/molecule/organism), source: "library"
+
+  ─── VALIDATION BEFORE WRITING ────────────────────────────────────────────────
+
+  - Every screen_id must match ^[a-z][a-z0-9_]*$ — re-slug if not
+  - No duplicate screen_id values — append _2, _3 if collisions exist
+  - All nodeId values must be "123:456" format (colon-separated integers)
+  - If requirements.json already exists, merge — preserve existing flows, constraints, analyst_notes
+  - Circular token aliases → resolved_value = raw alias string + analyst_notes warning
+  - Never fabricate token values — write "TBD" if a colour cannot be resolved to hex
+
+constraints:
+  - "Call figma_get_file_data(verbosity='summary', depth=1) first — never fetch full tree without summary first"
+  - "Use figma_get_design_system_kit(format='full') as primary design system extraction call"
+  - "If figma_get_variables returns 403, fall back to figma_get_styles and note the fallback in analyst_notes"
+  - "Token names must be normalised to semantic convention: color.{role}.{variant}, spacing.{size}, etc."
+  - "Write figma-source.json before requirements.json"
+  - "Merge into existing requirements.json if one exists — never overwrite flows, constraints, or analyst_notes"
+  - "Add an analyst_notes entry for every inference or assumption made"
+  - "Never fabricate token values — write TBD rather than invent a hex"
+  - "Only run when listed in access.figma_write_agents in pipeline.config.json (read-only Figma calls, but writes local files)"
+  - "All file reads and writes must be scoped to the pipeline working directory"
+
+acceptance_criteria:
+  - "figma-source.json is written with at least 1 page containing at least 1 frame"
+  - "figma-source.json variableCollections lists every collection returned by the API"
+  - "requirements.json is written with screens[] matching every non-component-page frame"
+  - "requirements.json screen_id values match ^[a-z][a-z0-9_]*$ with no duplicates"
+  - "requirements.json design_tokens contains at least 2 colour entries with hex values"
+  - "requirements.json component_hints is present (may be empty if no published components found)"
+  - "Token names in requirements.json follow semantic naming convention — no raw Figma variable names"
+  - "No token entry has a fabricated hex value — TBD is used for unresolvable tokens"
+  - "analyst_notes documents every inference (platform from width, p0 priority rules, fallback method used)"
+  - "Both figma-source.json and requirements.json are valid JSON with no trailing commas or comments"
+  - "A summary log entry is printed listing: fileKey, pages extracted, frames extracted, tokens extracted, components found"

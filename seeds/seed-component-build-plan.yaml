@@ -1,0 +1,237 @@
+goal: "Classify existing Figma components by atomic tier, perform gap analysis against blueprint slot types, define full API contracts for all components, and produce component-manifest.json and a topologically sorted component-build-plan.json"
+
+context: |
+  The component-architect agent receives four inputs and produces two output files.
+  It must run a live Figma discovery query first, then do gap analysis, then write outputs.
+
+  Inputs:
+    - screen-blueprints.json — all screens, zones, slots, slot types
+    - token-map.json — token registry with variable_id fields
+    - requirements.json — platform targets, component hints, brand constraints
+    - creative-direction.json — shape.component_defaults (radius per component type),
+      layout.density (padding tier), iconography.sizes (icon size scale),
+      typography.personality (label sizing)
+
+  Phase 1.5 — External design system evaluation (run after live discovery, before gap analysis):
+
+    Read requirements.json meta.design_system. If name is not "none":
+
+    For each component category, score three criteria:
+      coverage:            full | partial | none
+        full    — external system has the component with all required variants and states
+        partial — component exists but missing required variants or states
+        none    — component does not exist in the system
+      token_compatibility: yes | partial | no
+        yes     — theming/token override API available (CSS custom properties, theme object)
+        partial — some properties overridable, others hardcoded
+        no      — no token override support
+      brand_alignment:     yes | partial | no
+        yes     — structural defaults (shape, density, motion) match creative-direction.json
+        partial — requires structural customisation beyond token overrides
+        no      — fundamentally incompatible (e.g. MD3 rounded shapes on sharp-edged brand)
+
+    Decision table:
+      coverage=full,    token_compat=yes,     brand=yes          → external_library
+      coverage=full,    token_compat=yes,     brand=partial      → external_library (note overrides)
+      coverage=full,    token_compat=partial, brand=yes          → external_library (flag token gaps)
+      coverage=full,    token_compat=no,      brand=yes          → build_required (not_themeable)
+      coverage=partial, token_compat=yes,     brand=yes          → external_library (flag missing variants)
+      coverage=partial, any,                  brand=partial/no   → build_required (missing_variants or brand_incompatible)
+      coverage=none,    any,                  any                → build_required (not_available)
+
+    When decision is external_library: record external_key (e.g. "@radix-ui/react-dialog")
+    When decision is build_required after evaluation: set external_system_rejected: true,
+      rejection_reason: not_themeable | missing_variants | brand_incompatible | not_available
+
+    If requirements.json meta.design_system.name is "none" or field is absent: skip Phase 1.5.
+
+  Phase 1 — Live Figma discovery (MUST run before writing any output):
+
+    (async () => {
+      const results = [];
+      for (const page of figma.root.children) {
+        const components = page.findAll(
+          n => n.type === 'COMPONENT' || n.type === 'COMPONENT_SET'
+        );
+        for (const c of components) {
+          results.push({
+            id: c.id, name: c.name, type: c.type, key: c.key,
+            description: c.description || '',
+            variantGroupProperties: c.type === 'COMPONENT_SET'
+              ? Object.keys(c.variantGroupProperties || {}) : [],
+            parent: c.parent
+              ? { id: c.parent.id, name: c.parent.name, type: c.parent.type }
+              : null
+          });
+        }
+      }
+      return results;
+    })()
+
+  Also read any static sources: component-library.json, *.stories.ts, *.stories.tsx
+
+  Phase 2 — Atomic tier classification:
+    atom     — smallest indivisible unit; no component children
+               Button, Input, Icon, Avatar, Badge, Chip, Toggle, Checkbox, Radio,
+               Divider, Skeleton
+    molecule — 2–5 atoms; one clear purpose
+               SearchBar, FormField, MenuItem, ListItem, NavItem, Notification, Tooltip
+    organism — molecules and atoms; distinct UI section
+               Header, Footer, Card, Form, Modal, BottomSheet, TabBar, DataTable,
+               EmptyState, ErrorState
+    No tier skipping: molecules contain only atoms; organisms contain atoms and molecules.
+
+  Phase 3 — Slot type to component mapping:
+    button_primary, button_secondary → Button (atom)
+    icon_button                      → IconButton (atom)
+    input, form_field                → Input (atom) or FormField (molecule: Label+Input+ErrorText)
+    search_field                     → SearchBar (molecule: Input+Icon)
+    toggle                           → Toggle (atom)
+    checkbox                         → Checkbox (atom)
+    radio                            → Radio (atom)
+    select                           → Select (atom)
+    textarea                         → Textarea (atom)
+    avatar                           → Avatar (atom)
+    badge                            → Badge (atom)
+    chip                             → Chip (atom)
+    divider                          → Divider (atom)
+    skeleton, spinner                → Skeleton / Spinner (atom)
+    list_item                        → ListItem (molecule)
+    card                             → Card (organism)
+    navigation_bar, app_bar          → Header (organism)
+    tab_bar                          → TabBar (organism)
+    bottom_sheet                     → BottomSheet (organism)
+    modal_overlay                    → Modal (organism)
+    empty_state_illustration         → EmptyState (organism)
+    error_message                    → ErrorState (organism)
+    data_table                       → DataTable (organism)
+    chart                            → Chart (organism)
+
+  source field values:
+    "existing_library"  — found with valid figma_node_id in live discovery
+    "external_library"  — exists in a connected external Figma library
+    "build_required"    — missing; component-builder must create it
+
+  Phase 4 — API contract definition (for every build_required or state-augmentation component):
+
+    Read creative-direction.json before writing any API contract:
+      shape.component_defaults.[type] → border_radius token binding
+      layout.density → padding tier:
+        dense    → Semantic/Spacing/Component/xs–sm
+        standard → Semantic/Spacing/Component/sm–md
+        airy     → Semantic/Spacing/Component/md–lg
+      iconography.sizes → Icon atom counter_axis_size
+      typography.personality → label font_size token:
+        compact  → Primitives/Typography/FontSize/xs–sm
+        balanced → Primitives/Typography/FontSize/sm–base
+        spacious → Primitives/Typography/FontSize/base–md
+
+    API contract fields:
+      name, tier, description
+      props: array of { name, type, required, default, description }
+      variants: object of dimension → values array
+        e.g. { Variant: ["filled","outlined","text"], Size: ["sm","md","lg"],
+               State: ["Default","Hover","Pressed","Focused","Disabled"] }
+      state_machine:
+        interactive_states: list
+        data_driven_states: list
+        disabled_state: string
+        state_transitions: array of "From → To (trigger)" strings
+      token_bindings:
+        fills, text_color, border_radius, padding_h, padding_v, gap
+        — all reference token IDs from token-map.json, never raw values
+        — use [state] placeholder for state-interpolated tokens
+          e.g. "Component/Button/Background/[state]"
+      auto_layout:
+        layout_mode: HORIZONTAL | VERTICAL
+        primary_axis_sizing: HUG | FIXED | FILL
+        counter_axis_sizing: HUG | FIXED | FILL
+        counter_axis_size: integer (height for HORIZONTAL components)
+        item_spacing_token: token ID
+        padding_h_token: token ID
+        padding_v_token: token ID
+        min_width: integer or null
+      children: array of { name, tier, role } for molecules/organisms
+      source: "build_required" | "existing_library" | "external_library"
+
+    Minimum required states for interactive components:
+      Default, Hover, Pressed, Focused, Disabled
+    Add Loading for submit-capable components (buttons, forms)
+    Add Error for validation-capable components (inputs, form fields)
+
+  Phase 5 — Topological sort:
+    Atoms have no dependencies → build first (any order among atoms)
+    Molecules depend on their child atoms → schedule after all atom deps
+    Organisms depend on their child atoms and molecules → schedule last
+    build_index: 0-based integer, strictly increasing, no component may depend on
+    a component with a higher build_index
+
+  Output 1 — component-manifest.json:
+    meta:
+      generated_from: ["screen-blueprints.json","token-map.json","requirements.json",
+                       "creative-direction.json"]
+      generated_at: ISO8601
+      total_screens, total_instances
+      custom_required_count
+      live_discovery_ran: true
+      live_components_found: integer
+    component_library: array of all components (existing + build_required) with
+      component_name, tier, component_key (or null), figma_node_id (or null), source,
+      external_key (or null), external_system_rejected (boolean), rejection_reason (or null),
+      token_override_notes (or null), variants object, props array
+    screens: array of screen objects, each with screen_id, screen_name,
+      states keyed object. Per state:
+        root_container: { instance_id, width, height, layout_mode }
+        instances: array of:
+          instance_id: [screen_id]__[slot_id]
+          slot_id, zone_id, component_name, figma_node_id, source
+          variant_properties: { Variant, Size, State }
+          props: { label, disabled, ... }
+          token_overrides: {}
+          layout:
+            parent_instance_id
+            position_in_parent: integer
+            width: "fill_container" | "hug_content" | integer
+            height: "fill_container" | "hug_content" | integer
+          repeat: boolean
+          repeat_count: integer or null
+    resolver_notes: array
+
+  Output 2 — component-build-plan.json:
+    meta:
+      generated_at: ISO8601
+      total_to_build: integer
+      atoms_count, molecules_count, organisms_count
+    build_order: array sorted atoms → molecules → organisms, each entry:
+      build_index: integer (0-based)
+      name, tier, description
+      external_system_rejected (boolean), rejection_reason (or null)
+      props, variants, state_machine, token_bindings, auto_layout, children, source
+
+constraints:
+  - "ALWAYS run the live Figma discovery query before writing either output file"
+  - "If requirements.json meta.design_system.name is not 'none', run Phase 1.5 before gap analysis"
+  - "source: 'external_library' requires a non-null external_key"
+  - "source: 'build_required' after Phase 1.5 evaluation requires external_system_rejected: true and a rejection_reason"
+  - "Read creative-direction.json before writing any API contract"
+  - "Every slot from screen-blueprints.json must have a corresponding instance in component-manifest.json"
+  - "No component in build_order may depend on a component with a higher build_index"
+  - "Every interactive component must have minimum states: Default, Hover, Pressed, Focused, Disabled"
+  - "All token_bindings values must reference token IDs present in token-map.json token_registry"
+  - "Never use raw hex or px values in token_bindings — always a token ID string"
+  - "source: 'existing_library' only if found with valid figma_node_id in live discovery"
+  - "molecules may only contain atoms in children; organisms may contain atoms and molecules"
+  - "Write both component-manifest.json and component-build-plan.json before declaring completion"
+  - "All file reads and writes must be scoped to the pipeline working directory"
+
+acceptance_criteria:
+  - "component-manifest.json is written with meta.live_discovery_ran: true"
+  - "component-manifest.json screens array covers every screen_id in screen-blueprints.json"
+  - "Every slot_id from screen-blueprints.json appears as an instance in component-manifest.json"
+  - "Every instance has instance_id, slot_id, zone_id, component_name, source, variant_properties, props, and layout fields"
+  - "component-build-plan.json is written with build_order sorted atoms → molecules → organisms"
+  - "No component in build_order references a child with a higher build_index"
+  - "Every build_order entry has: build_index, name, tier, description, external_system_rejected, rejection_reason, props, variants, state_machine, token_bindings, auto_layout, children, source"
+  - "Every interactive component in build_order has Default, Hover, Pressed, Focused, Disabled in variants.State"
+  - "All token_bindings values exist as token_id entries in token-map.json token_registry"
+  - "component-build-plan.json meta fields include total_to_build, atoms_count, molecules_count, organisms_count"

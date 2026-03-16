@@ -1,0 +1,292 @@
+goal: "Generate executable figma_execute JavaScript scripts that instantiate built components onto Hi-Fi screen frames — one script per screen — writing figma-scripts/[screen_id].js and figma-scripts/index.json"
+
+context: |
+  The figma-instruction-writer agent reads the organism manifest, built component
+  library, and creative direction, then generates self-contained JavaScript scripts
+  that build complete screen designs by instantiating pre-built components from the
+  component library into zone frames on a 'Hi-Fi Screens' Figma page.
+
+  Inputs:
+    - built-component-library.json — post-combine component node IDs (from component-builder)
+    - organism-manifest.json — organism placements per screen zone (from organism-composer)
+    - component-manifest.json — instance-level prop and layout specs (from component-architect)
+    - token-map.json — token-to-variable resolution table (from token-system-builder)
+    - screen-blueprints.json — structural layout reference, platform dimensions
+    - requirements.json — platform targets, custom dimensions
+    - creative-direction.json — typography.heading_family, typography.body_family,
+      media.image_treatment, iconography.sizes, motion.register, meta.design_statement
+
+  Outputs:
+    - figma-scripts/[screen_id].js — one self-contained script per screen
+    - figma-scripts/index.json — execution order manifest
+
+  ─── CRITICAL API RULE 1: Color object format ──────────────────────────────
+
+  Figma color objects use {r, g, b} with 0–1 float values. NO alpha key in color.
+
+    // CORRECT
+    node.fills = [{ type: 'SOLID', color: { r: 0.102, g: 0.451, b: 0.910 }, opacity: 0.8 }];
+
+    // WRONG — silently fails or errors
+    node.fills = [{ type: 'SOLID', color: { r: 0.102, g: 0.451, b: 0.910, a: 0.8 } }];
+
+    function hexToRgb(hex) {
+      return {
+        r: parseInt(hex.slice(1,3),16)/255,
+        g: parseInt(hex.slice(3,5),16)/255,
+        b: parseInt(hex.slice(5,7),16)/255
+      };
+    }
+
+  ─── CRITICAL API RULE 2: Page switching ───────────────────────────────────
+
+    // CORRECT
+    await figma.setCurrentPageAsync(targetPage);
+
+    // WRONG — silent fail, page does not switch
+    figma.currentPage = targetPage;
+
+  ─── CRITICAL API RULE 3: Nodes inside containers ──────────────────────────
+
+  Never create nodes on the canvas root. Every node must be inside a Section or Frame.
+
+  ─── CRITICAL API RULE 4: Font loading ─────────────────────────────────────
+
+  Load fonts before setting text.characters. Use font families from creative-direction.json:
+    typography.heading_family.name and .weights
+    typography.body_family.name and .weights
+  Map weight numbers to Figma style names:
+    400 → "Regular", 500 → "Medium", 600 → "SemiBold", 700 → "Bold", 800 → "ExtraBold"
+
+  ─── CRITICAL API RULE 5: Component instantiation ──────────────────────────
+
+  For locally-built components (all entries in built-component-library.json):
+
+    const nodeId = library["Button"].variants["Variant=filled,Size=md,State=Default"].node_id;
+    const componentNode = await figma.getNodeByIdAsync(nodeId);
+    if (!componentNode || componentNode.type !== 'COMPONENT') {
+      return {
+        success: false,
+        error: `ESCALATION: Component node not found — nodeId: ${nodeId}, component: Button. Rerun component-builder.`,
+        screen_id: "[screen_id]"
+      };
+    }
+    const instance = componentNode.createInstance();
+    instance.setProperties({ 'Label': 'Sign In' });
+    frame.appendChild(instance);
+
+  ESCALATION is a hard stop — no placeholder rectangles for missing components.
+  For external library components only (source: "external_library"):
+    figma.importComponentByKeyAsync(key)
+  Never use figma.currentPage.findOne() for component lookup.
+
+  ─── CRITICAL API RULE 6: Auto layout ──────────────────────────────────────
+
+    frame.layoutMode = "VERTICAL";
+    frame.primaryAxisSizingMode = "AUTO";    // hug
+    frame.counterAxisSizingMode = "FIXED";
+    frame.layoutSizingHorizontal = "FILL";   // not deprecated layoutGrow
+    frame.layoutSizingVertical = "HUG";
+    frame.layoutWrap = "WRAP";               // for grid layouts
+    frame.layoutPositioning = "ABSOLUTE";    // overlays and badges only
+
+  ─── CRITICAL API RULE 7: Variable binding ─────────────────────────────────
+
+    const variable = figma.variables.getVariableById("VariableID:123:456");
+    if (variable && variable.resolvedType === 'COLOR') {
+      figma.variables.setBoundVariableForNode(node, 'fills', variable);
+    } else {
+      node.fills = [{ type: 'SOLID', color: hexToRgb(resolvedHex) }];
+      fallbacks.push({ token, reason: 'variable_not_found', value: resolvedHex });
+    }
+
+  Prefer variable binding over hardcoded values. Log every fallback.
+
+  ─── Script structure per screen ───────────────────────────────────────────
+
+  Each script covers all states for one screen. Structure:
+
+    /**
+     * Screen: [Screen Name]
+     * States: default, loading, error
+     * Generated by: figma-instruction-writer
+     * Source: organism-manifest.json + built-component-library.json
+     * Tokens resolved from: token-map.json
+     * Creative direction: [design_statement from creative-direction.json]
+     */
+
+    (async () => {
+      // 1. Load fonts from creative-direction.json typography families
+      await figma.loadFontAsync({ family: "[heading_family]", style: "Bold" });
+      await figma.loadFontAsync({ family: "[body_family]", style: "Regular" });
+      await figma.loadFontAsync({ family: "[body_family]", style: "SemiBold" });
+
+      // 2. Helpers
+      function hexToRgb(hex) { /* ... */ }
+
+      // 3. Inline organism placements from organism-manifest.json screen_zone_index
+      const zoneIndex = { /* screen_zone_index["screen_id"] */ };
+      const organisms = { /* keyed by organism_id */ };
+
+      // 4. Inline library node IDs from built-component-library.json
+      const library = { "Header": { "State=Default": { node_id: "..." } } };
+
+      // 5. Find or create 'Hi-Fi Screens' page
+      let targetPage = figma.pages.find(p => p.name === "Hi-Fi Screens");
+      if (!targetPage) {
+        targetPage = figma.createPage();
+        targetPage.name = "Hi-Fi Screens";
+      }
+      await figma.setCurrentPageAsync(targetPage);
+
+      // 6. Create screen section container
+      const section = figma.createSection();
+      section.name = "Screen: [Screen Name]";
+      targetPage.appendChild(section);
+
+      const fallbacks = [];
+      const nodesCreated = [];
+
+      // 7. Build each state frame
+      // --- DEFAULT STATE ---
+      const defaultFrame = figma.createFrame();
+      defaultFrame.name = "[screen_id]__default";
+      defaultFrame.resize(390, 844);          // from platform dimensions
+      defaultFrame.layoutMode = "VERTICAL";
+      defaultFrame.primaryAxisSizingMode = "FIXED";
+      defaultFrame.counterAxisSizingMode = "FIXED";
+      defaultFrame.clipsContent = true;
+      section.appendChild(defaultFrame);
+
+      // 8. Instantiate organisms into zone frames
+      for (const [zoneId, organismId] of Object.entries(zoneIndex)) {
+        const org = organisms[organismId];
+        const variantEntry = library[org.organism_name]?.[org.variant_selection];
+        if (!variantEntry) {
+          return { success: false, error: `ESCALATION: No library entry for ${org.organism_name}`, screen_id: "[screen_id]" };
+        }
+        const componentNode = await figma.getNodeByIdAsync(variantEntry.node_id);
+        if (!componentNode || componentNode.type !== 'COMPONENT') {
+          return { success: false, error: `ESCALATION: Component node not found — nodeId: ${variantEntry.node_id}`, screen_id: "[screen_id]" };
+        }
+        const zoneFrame = figma.createFrame();
+        zoneFrame.name = `zone__${zoneId}`;
+        zoneFrame.layoutMode = "VERTICAL";
+        zoneFrame.primaryAxisSizingMode = "AUTO";
+        zoneFrame.layoutSizingHorizontal = "FILL";
+        defaultFrame.appendChild(zoneFrame);
+
+        const instance = componentNode.createInstance();
+        instance.layoutSizingHorizontal = "FILL";
+        if (org.prop_overrides) instance.setProperties(org.prop_overrides);
+        zoneFrame.appendChild(instance);
+        nodesCreated.push({ organism: org.organism_name, zone: zoneId, instance_id: instance.id });
+      }
+
+      // 9. Canvas positioning
+      section.x = /* execution_order_index * 500 */ 0;
+      section.y = 0;
+
+      return {
+        success: true,
+        screen_id: "[screen_id]",
+        nodes_created: nodesCreated.length,
+        node_ids: nodesCreated,
+        variable_bindings: [],
+        fallbacks
+      };
+    })();
+
+  ─── Creative direction application ────────────────────────────────────────
+
+  Read creative-direction.json before generating any script:
+
+  Font loading: use exact family names from typography.heading_family.name and
+    typography.body_family.name, not hardcoded "Inter".
+
+  Image/hero slots (slot_type image, hero, empty_state_illustration):
+    media.image_treatment === "tinted":
+      Add a rectangle overlay with primary.scale["500"].hex at opacity 0.15,
+      layoutPositioning: "ABSOLUTE"
+    media.image_treatment === "gradient-overlay":
+      Add a GRADIENT_LINEAR rectangle from transparent to primary.scale["900"].hex
+      at opacity 0.7, layoutPositioning: "ABSOLUTE"
+    media.image_treatment === "greyscale":
+      Add a rectangle with blendMode: 'SATURATION', opacity: 0
+
+  Icon size: use iconography.sizes.md for standard icon instances.
+
+  Screen background: bind to Semantic/Color/Background/default variable from
+    token-map.json, not hardcoded white.
+
+  Motion annotations: embed comment block in script:
+    // MOTION: register=[register], easing=[primary_easing], duration=[normal]ms
+
+  ─── Platform frame dimensions ─────────────────────────────────────────────
+
+    mobile / web_mobile: 390 × 844
+    tablet:              768 × 1024
+    desktop:             1440 × 900
+
+  ─── Organism placement resolution ─────────────────────────────────────────
+
+  Read organism-manifest.json screen_zone_index["screen_id"] to get
+  { zone_id: organism_id } mapping. For each zone, look up the organism in
+  organisms[], find the screen_placement for this screen, resolve the variant
+  node_id from built-component-library.json, instantiate, apply prop_overrides.
+
+  The parentId of each zone frame is the screen frame created in the current
+  script — never read from organism-manifest.json.
+
+  ─── Naming convention ─────────────────────────────────────────────────────
+
+  Every node: [screen_id]__[zone_id]__[component_name]
+  Example: login__header__Header, home__content__ContentFeed
+
+  ─── figma-scripts/index.json schema ───────────────────────────────────────
+
+    {
+      "execution_order": [
+        {
+          "screen_id": "string",
+          "screen_name": "string",
+          "script_file": "figma-scripts/[screen_id].js",
+          "dependencies": [],
+          "estimated_nodes": integer
+        }
+      ]
+    }
+
+constraints:
+  - "NEVER include 'a' key in color objects — use opacity field on the paint object instead"
+  - "ALWAYS use await figma.setCurrentPageAsync() — never assign figma.currentPage directly"
+  - "NEVER create nodes on the canvas root — every node must be inside a Section or Frame"
+  - "ALWAYS load fonts before setting text.characters"
+  - "Load font families from creative-direction.json typography fields, not hardcoded 'Inter'"
+  - "NEVER use findOne() to locate components — always getNodeByIdAsync with the node ID from built-component-library.json"
+  - "NEVER use importComponentByKeyAsync for locally-built components — only for source: 'external_library'"
+  - "NEVER create placeholder rectangles for missing components — return ESCALATION error immediately"
+  - "NEVER use layoutGrow — use layoutSizingHorizontal or layoutSizingVertical set to 'FILL'"
+  - "Prefer setBoundVariableForNode over hardcoded values for every token with a variable_id"
+  - "Log every hardcoded fallback in the script's fallbacks array with token and reason"
+  - "Apply image treatment from creative-direction.json media.image_treatment on image/hero slots"
+  - "Every script must return { success, screen_id, nodes_created, node_ids, variable_bindings, fallbacks }"
+  - "The parentId of zone frames is the screen frame created at runtime — never from organism-manifest.json"
+  - "Write all figma-scripts/[screen_id].js files and figma-scripts/index.json before declaring completion"
+  - "All file reads and writes must be scoped to the pipeline working directory"
+  - "WRITE-CAPABLE: Only run when listed in access.figma_write_agents in pipeline.config.json"
+
+acceptance_criteria:
+  - "figma-scripts/index.json is written with an execution_order array"
+  - "execution_order contains one entry per screen_id in organism-manifest.json"
+  - "One figma-scripts/[screen_id].js file exists per screen_id in execution_order"
+  - "Every script is wrapped in an async IIFE pattern '(async () =>'"
+  - "No script contains a color object literal with an 'a' key"
+  - "No script contains 'figma.currentPage =' (direct assignment)"
+  - "No script contains 'layoutGrow'"
+  - "Every script contains at least one figma.loadFontAsync call"
+  - "Font families in loadFontAsync calls match typography family names from creative-direction.json"
+  - "Every script contains the ESCALATION return pattern for missing component nodes"
+  - "Every script ends with a return object containing success, screen_id, nodes_created, node_ids, variable_bindings, and fallbacks"
+  - "Scripts for screens with image or hero slots include image treatment code based on creative-direction.json media.image_treatment"
+  - "Every script includes the header comment block with Screen, States, Generated by, Source, Tokens resolved from, and Creative direction fields"

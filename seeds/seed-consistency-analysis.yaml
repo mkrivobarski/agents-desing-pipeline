@@ -1,0 +1,193 @@
+goal: "Perform cross-screen consistency analysis across all extracted Figma frames — building a colour usage map, spacing histogram, typography audit, component drift analysis, icon audit, alignment check, and overall consistency score"
+
+context: |
+  The consistency-analyser runs all 7 analysis modules across every screen before
+  writing any output. It produces quantitative data structures that measure how
+  consistent the design system is in practice, not per-screen correctness.
+
+  Inputs:
+    - extracted-frames/index.json — index of all screens with paths to per-screen data files
+    - figma-tokens.json — resolved token registry; ground truth for in-system values
+    - component-manifest.json (if present) — intended component inventory for drift validation
+    - Any additional *-manifest.json or component-library.json files in working directory
+
+  For each screen in extracted-frames/index.json, also read the corresponding
+  extracted-frames/[screen_id].json for full layer tree, fills, strokes, spacing,
+  typography, and component instance data.
+
+  Run all 7 modules across the complete screen set before computing scores.
+
+  ─── MODULE 1: Colour Usage Map ────────────────────────────────────────────────
+
+  - Parse every fills and strokes array in every layer across all screens
+  - Normalise all colours to 6-digit uppercase hex; blend RGBA fills over white for
+    comparison, record opacity separately
+  - For each unique hex: count, screenIds, exact token match in figma-tokens.json,
+    tokenName (null if unmatched)
+  - Sort by count descending
+  - No-token hex appearing 3+ times → warning; appearing 1–2 times → suggestion
+
+  ─── MODULE 2: Spacing Histogram ────────────────────────────────────────────────
+
+  - Collect all padding and gap values from auto-layout containers (NOT absolute x/y positions)
+  - Build histogram: { value, count, inScale, tokenName }
+  - Detect base spacing unit: GCD of top 3 most-common values (cap at 16); use
+    figma-tokens.json spacing.base or spacing.xs directly if defined
+  - Outlier threshold: value < 3 occurrences AND not in scale → suggestion
+    value ≥ 5 occurrences AND not in scale → warning
+
+  ─── MODULE 3: Typography Audit ─────────────────────────────────────────────────
+
+  - Collect every unique {fontFamily, fontSize, fontWeight, lineHeightPx, letterSpacingPx}
+    combination from text layers across all screens
+  - For each spec: count, screenIds, inScale (matches named typography token), tokenName
+  - Flags:
+    > 8 distinct font sizes → warning (list all)
+    > 3 distinct font families → warning
+    Font family not in figma-tokens.json → error
+    Font size not in scale, appearing 3+ times → warning; 1–2 times → suggestion
+    Same semantic role (detected by layer name: title/heading/label/caption/body) using
+      different specs across screens → warning
+
+  ─── MODULE 4: Component Drift Analysis ─────────────────────────────────────────
+
+  - Group all component instances by component name / key
+  - Per group, identify drift (NOT expected variation):
+    Fill overrides on sub-layers → drift
+    Spacing overrides (padding/gap from component default) → drift
+    Detached sub-instances (nested component swapped for different component) → drift
+    Note: variant/size/state changes and text content changes are NOT drift
+  - driftScore = instances_with_overrides / total_instances
+    score > 0.3 → warning; score > 0.6 → error
+
+  ─── MODULE 5: Icon Audit ──────────────────────────────────────────────────────
+
+  - Identify icon layers by name pattern (icon-*, ic_*, Icon/*, component set "icon"/"Icon"/"ic")
+    or VECTOR type with bounding box < 48×48
+  - Determine icon family from layer/component name prefix
+  - More than 1 icon family → warning (list which screens use which families)
+  - Emoji characters as icons (Unicode emoji in text layers) → error
+
+  ─── MODULE 6: Alignment Issues ─────────────────────────────────────────────────
+
+  - Within auto-layout frames: check primaryAxisAlignItems / counterAxisAlignItems consistency
+    across sibling frames with the same role
+  - Within absolute-position frames: elements sharing a common edge axis but offset by >2px → warning
+  - Text layers in same container with inconsistent alignment (no apparent hierarchy) → warning
+  - Elements on an apparent grid but offset by 1–3px → suggestion
+
+  ─── MODULE 7: Overall Consistency Score ────────────────────────────────────────
+
+  overallConsistencyScore = clamp(1.0
+    - (rogue_colour_count * 0.02)
+    - (out_of_scale_spacing_count * 0.01)
+    - (out_of_scale_font_count * 0.02)
+    - (component_drift_warnings * 0.03)
+    - (component_drift_errors * 0.05)
+    - ((icon_family_count - 1) * 0.05)
+    - (alignment_issue_count * 0.01)
+  , 0, 1)
+
+  ≥ 0.9 → excellent; 0.75–0.89 → acceptable; < 0.75 → remediation required before handoff
+
+  ─── OUTPUT FILES ────────────────────────────────────────────────────────────────
+
+  Write consistency-report.json:
+  {
+    "meta": {
+      "generated_at": "ISO8601",
+      "source_files": ["extracted-frames/index.json", "figma-tokens.json"],
+      "screens_analysed": 0,
+      "total_layers_scanned": 0
+    },
+    "colourMap": [
+      { "hex": "#1A73E8", "count": 0, "screenIds": [], "tokenName": "color.primary.default", "inSystem": true, "severity": null }
+    ],
+    "rogueColours": [
+      { "hex": "#3B5998", "count": 0, "screenIds": [], "tokenName": null, "inSystem": false, "severity": "warning|suggestion", "nearestToken": "color.primary.dark (#2A4A87, delta 12% luminance)", "recommendation": "string" }
+    ],
+    "spacingHistogram": [
+      { "value": 16, "count": 0, "inScale": true, "tokenName": "spacing.md" }
+    ],
+    "spacingOutliers": [
+      { "value": 13, "count": 0, "inScale": false, "screenIds": [], "severity": "warning|suggestion", "recommendation": "Replace with spacing.sm (12px) or spacing.md (16px)" }
+    ],
+    "typographyUsage": [
+      { "specId": "spec_001", "fontFamily": "Inter", "fontSize": 16, "fontWeight": 400, "lineHeightPx": 24, "letterSpacingPx": 0, "count": 0, "screenIds": [], "inScale": true, "tokenName": "typography.body.regular", "severity": null }
+    ],
+    "typographyIssues": [
+      { "type": "out_of_scale|mixed_family|too_many_sizes|role_inconsistency", "description": "string", "affectedSpecs": ["spec_001"], "screenIds": [], "severity": "error|warning|suggestion", "recommendation": "string" }
+    ],
+    "componentDrift": [
+      {
+        "componentName": "Button/Primary",
+        "componentKey": "string or null",
+        "totalInstances": 0,
+        "instancesWithDrift": 0,
+        "driftScore": 0.0,
+        "severity": null,
+        "instances": [
+          { "screenId": "string", "nodeId": "string", "overrides": [{ "property": "fill on sub-layer 'bg'", "expectedValue": "#1A73E8", "actualValue": "#0052CC", "driftType": "fill_override|spacing_override|detached_child" }] }
+        ]
+      }
+    ],
+    "iconAudit": {
+      "totalIconsFound": 0,
+      "families": [{ "name": "material-symbols", "iconCount": 0, "screenIds": [], "detectionBasis": "string" }],
+      "mixedFamilies": false,
+      "hasEmojiIcons": false,
+      "severity": null,
+      "recommendation": null
+    },
+    "alignmentIssues": [
+      { "screenId": "string", "issues": [{ "layerPath": "string", "description": "string", "severity": "warning|suggestion" }] }
+    ],
+    "overallConsistencyScore": 0.0,
+    "scoreBreakdown": {
+      "rogueColourPenalty": 0.0,
+      "spacingPenalty": 0.0,
+      "typographyPenalty": 0.0,
+      "componentDriftPenalty": 0.0,
+      "iconMixingPenalty": 0.0,
+      "alignmentPenalty": 0.0
+    },
+    "analyserNotes": []
+  }
+
+  Write consistency-report.md:
+    # Consistency Analysis Report
+    **Screens analysed:** N  **Overall score:** X.XX / 1.00  **Generated:** ISO8601
+    ## Score Interpretation
+    ## Colour System        [rogue colour table with count, hex, nearest token, recommendation]
+    ## Spacing System       [histogram summary: top 10 values, in/out scale]
+    ## Typography           [all unique specs table; all issues listed]
+    ## Component Consistency [drift table sorted by driftScore; top 3 drifted components]
+    ## Icon Usage           [family breakdown table; mixed-family flag]
+    ## Alignment            [issues by screen]
+    ## Recommendations (Priority Order) [numbered, each with low/medium/high effort estimate]
+
+constraints:
+  - "Analyse every screen in extracted-frames/index.json — do not skip any"
+  - "Colour comparison uses exact hex after normalisation for in-system determination; approximate matching only for nearestToken suggestions"
+  - "driftScore must be computed from actual instance counts — not estimated"
+  - "overallConsistencyScore must be computed from actual counts using the formula — not estimated"
+  - "spacingHistogram must include every distinct spacing value found — not just the top N"
+  - "Do not report typographyUsage entries for non-text layers"
+  - "Only report values actually found in extracted-frames data — never fabricate findings"
+  - "Write both consistency-report.json and consistency-report.md before declaring completion"
+  - "All file reads and writes must be scoped to the pipeline working directory"
+
+acceptance_criteria:
+  - "consistency-report.json is written and valid JSON"
+  - "colourMap[] is present with at least 1 entry; each entry has hex, count, screenIds, tokenName (or null), inSystem"
+  - "rogueColours[] is present (may be empty); each entry has nearestToken and recommendation"
+  - "spacingHistogram[] is present; every distinct spacing value found appears; each entry has value, count, inScale, tokenName"
+  - "spacingOutliers[] lists all spacing values not in scale with screenIds and severity"
+  - "typographyUsage[] is present; each entry has fontFamily, fontSize, fontWeight, lineHeightPx, count, inScale"
+  - "typographyIssues[] is present (may be empty); each entry has type, description, severity, recommendation"
+  - "componentDrift[] is present (may be empty); each entry has componentName, totalInstances, instancesWithDrift, driftScore, severity"
+  - "iconAudit object is present with families[] array, mixedFamilies, hasEmojiIcons"
+  - "alignmentIssues[] is present (may be empty)"
+  - "overallConsistencyScore is a number between 0 and 1 computed from the formula"
+  - "scoreBreakdown shows each penalty component"
+  - "consistency-report.md is written with all required sections including Recommendations"

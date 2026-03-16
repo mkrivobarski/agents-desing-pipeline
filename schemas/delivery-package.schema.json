@@ -1,0 +1,263 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "delivery-package.schema.json",
+  "title": "Delivery Package",
+  "description": "Final ordered deliverables produced by the delivery-sequencer agent. This is the engineering handoff artifact.",
+  "type": "object",
+  "required": ["meta", "executive_summary", "screen_sequence", "token_coverage_report", "code_connect_mapping", "delivery_checklist"],
+  "additionalProperties": false,
+  "properties": {
+    "meta": {
+      "type": "object",
+      "required": [
+        "project_name", "delivery_version", "delivered_at",
+        "total_screens", "total_flows", "overall_validation_pass_rate",
+        "token_coverage_rate", "component_library_coverage_rate"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "project_name": { "type": "string" },
+        "delivery_version": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$" },
+        "delivered_at": { "type": "string", "format": "date-time" },
+        "pipeline_run_id": { "type": "string" },
+        "total_screens": { "type": "integer", "minimum": 0 },
+        "total_flows": { "type": "integer", "minimum": 0 },
+        "overall_validation_pass_rate": { "type": "number", "minimum": 0, "maximum": 1 },
+        "token_coverage_rate": { "type": "number", "minimum": 0, "maximum": 1 },
+        "component_library_coverage_rate": { "type": "number", "minimum": 0, "maximum": 1 }
+      }
+    },
+    "executive_summary": {
+      "type": "object",
+      "required": ["product_overview", "screens_delivered", "flows_delivered", "design_system_compliance_score"],
+      "additionalProperties": false,
+      "properties": {
+        "product_overview": { "type": "string" },
+        "screens_delivered": { "type": "integer", "minimum": 0 },
+        "flows_delivered": { "type": "integer", "minimum": 0 },
+        "design_system_compliance_score": { "type": "number", "minimum": 0, "maximum": 1 },
+        "blockers": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "known_deviations": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "engineering_notes": { "type": "string" }
+      }
+    },
+    "screen_sequence": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "sequence_number", "sequence_id", "screen_id", "screen_name",
+          "flow_id", "flow_name", "validation_result", "parity_score",
+          "states", "navigation_annotations", "handoff"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "sequence_number": { "type": "string", "pattern": "^\\d{2,}$" },
+          "sequence_id": { "type": "string" },
+          "screen_id": { "type": "string" },
+          "screen_name": { "type": "string" },
+          "flow_id": { "type": "string" },
+          "flow_name": { "type": "string" },
+          "validation_result": { "type": "string", "enum": ["PASS", "WARN", "FAIL"] },
+          "parity_score": { "type": "number", "minimum": 0, "maximum": 1 },
+          "screenshot_file": { "type": "string" },
+          "states": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["state", "sequence_sub_id", "validation_result"],
+              "additionalProperties": false,
+              "properties": {
+                "state": { "type": "string" },
+                "sequence_sub_id": { "type": "string" },
+                "screenshot_file": { "type": "string" },
+                "validation_result": { "type": "string", "enum": ["PASS", "WARN", "FAIL"] }
+              }
+            }
+          },
+          "navigation_annotations": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "incoming_from": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": ["screen_id", "trigger"],
+                  "additionalProperties": false,
+                  "properties": {
+                    "screen_id": { "type": "string" },
+                    "trigger": { "type": "string" },
+                    "condition": { "oneOf": [{ "type": "null" }, { "type": "string" }] }
+                  }
+                }
+              },
+              "outgoing_to": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": ["screen_id", "trigger"],
+                  "additionalProperties": false,
+                  "properties": {
+                    "screen_id": { "type": "string" },
+                    "trigger": { "type": "string" },
+                    "condition": { "oneOf": [{ "type": "null" }, { "type": "string" }] },
+                    "animation": {
+                      "type": "string",
+                      "enum": ["push", "pop", "fade", "modal_present", "modal_dismiss", "none"]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "requirement_traceability": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "handoff": {
+            "type": "object",
+            "required": ["purpose", "components_used", "tokens_used", "developer_notes", "accessibility_notes"],
+            "additionalProperties": false,
+            "properties": {
+              "purpose": { "type": "string" },
+              "components_used": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": ["component_name", "variant", "instance_count"],
+                  "properties": {
+                    "component_name": { "type": "string" },
+                    "variant": { "type": "string" },
+                    "instance_count": { "type": "integer", "minimum": 1 }
+                  }
+                }
+              },
+              "tokens_used": {
+                "type": "array",
+                "items": { "type": "string" }
+              },
+              "spacing_callouts": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": ["element", "property", "value", "token"],
+                  "properties": {
+                    "element": { "type": "string" },
+                    "property": { "type": "string" },
+                    "value": { "type": "string" },
+                    "token": { "type": "string" }
+                  }
+                }
+              },
+              "developer_notes": { "type": "string" },
+              "accessibility_notes": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "blocked_screens": {
+      "type": "array",
+      "description": "Screens excluded from delivery due to FAIL validation result",
+      "items": {
+        "type": "object",
+        "properties": {
+          "screen_id": { "type": "string" },
+          "screen_name": { "type": "string" },
+          "reason": { "type": "string" }
+        }
+      }
+    },
+    "token_coverage_report": {
+      "type": "object",
+      "required": ["overall_coverage_rate", "coverage_by_category", "most_used_tokens", "unused_tokens", "missing_tokens_summary", "hardcoded_values_summary"],
+      "additionalProperties": false,
+      "properties": {
+        "overall_coverage_rate": { "type": "number", "minimum": 0, "maximum": 1 },
+        "coverage_by_category": {
+          "type": "object",
+          "description": "Map of token category to coverage rate (0-1)"
+        },
+        "most_used_tokens": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "token_id": { "type": "string" },
+              "usage_count": { "type": "integer" }
+            }
+          }
+        },
+        "unused_tokens": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "missing_tokens_summary": {
+          "type": "object",
+          "required": ["total", "blocking", "resolved", "items"],
+          "properties": {
+            "total": { "type": "integer" },
+            "blocking": { "type": "integer" },
+            "resolved": { "type": "integer" },
+            "items": { "type": "array", "items": { "type": "object" } }
+          }
+        },
+        "hardcoded_values_summary": {
+          "type": "object",
+          "required": ["total", "items"],
+          "properties": {
+            "total": { "type": "integer" },
+            "items": { "type": "array", "items": { "type": "object" } }
+          }
+        }
+      }
+    },
+    "code_connect_mapping": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["component_name", "status"],
+        "additionalProperties": false,
+        "properties": {
+          "component_name": { "type": "string" },
+          "figma_component_key": { "oneOf": [{ "type": "null" }, { "type": "string" }] },
+          "code_import_path": { "oneOf": [{ "type": "null" }, { "type": "string" }] },
+          "status": {
+            "type": "string",
+            "enum": ["mapped", "missing_code", "missing_figma_key", "custom_required"]
+          },
+          "notes": { "type": "string" }
+        }
+      }
+    },
+    "delivery_checklist": {
+      "type": "array",
+      "minItems": 10,
+      "items": {
+        "type": "object",
+        "required": ["item", "status"],
+        "additionalProperties": false,
+        "properties": {
+          "item": { "type": "string" },
+          "status": {
+            "type": "string",
+            "enum": ["complete", "incomplete", "not_applicable"]
+          },
+          "notes": { "type": "string" }
+        }
+      }
+    },
+    "sequencer_notes": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  }
+}

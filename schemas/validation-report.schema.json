@@ -1,0 +1,158 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "validation-report.schema.json",
+  "title": "Validation Report",
+  "description": "Design QA validation report produced by the design-validator agent for a single screen+state screenshot.",
+  "type": "object",
+  "required": ["meta", "checks", "summary_by_category", "blocking_fixes"],
+  "additionalProperties": false,
+  "properties": {
+    "meta": {
+      "type": "object",
+      "required": [
+        "screen_id", "state", "screenshot_file", "validated_at",
+        "overall_result", "pass_count", "fail_count", "warn_count", "parity_score"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "screen_id": { "type": "string" },
+        "state": {
+          "type": "string",
+          "enum": ["default", "loading", "error", "empty", "success"]
+        },
+        "screenshot_file": { "type": "string" },
+        "validated_at": { "type": "string", "format": "date-time" },
+        "validator_version": { "type": "string" },
+        "overall_result": {
+          "type": "string",
+          "enum": ["PASS", "FAIL", "WARN"],
+          "description": "PASS >= 0.95, WARN >= 0.85, FAIL < 0.85"
+        },
+        "pass_count": { "type": "integer", "minimum": 0 },
+        "fail_count": { "type": "integer", "minimum": 0 },
+        "warn_count": { "type": "integer", "minimum": 0 },
+        "skip_count": { "type": "integer", "minimum": 0 },
+        "parity_score": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "(pass + warn*0.5) / total_checks"
+        },
+        "correction_loop_iteration": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Which correction loop iteration this report is from (0 = first run)"
+        }
+      }
+    },
+    "checks": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["check_id", "check_category", "check_name", "element_path", "result", "expected", "actual", "severity"],
+        "additionalProperties": false,
+        "properties": {
+          "check_id": { "type": "string" },
+          "check_category": {
+            "type": "string",
+            "enum": ["structure", "spacing", "color", "typography", "component", "state", "accessibility"]
+          },
+          "check_name": { "type": "string" },
+          "element_path": {
+            "type": "string",
+            "description": "zone_id > slot_id path of the element being checked"
+          },
+          "result": {
+            "type": "string",
+            "enum": ["PASS", "FAIL", "WARN", "SKIP"]
+          },
+          "expected": { "type": "string" },
+          "actual": { "type": "string" },
+          "delta": {
+            "oneOf": [{ "type": "null" }, { "type": "string" }],
+            "description": "Quantified difference, e.g. +8px or #FF0000 vs #1A73E8"
+          },
+          "severity": {
+            "type": "string",
+            "enum": ["blocking", "major", "minor", "cosmetic"]
+          },
+          "fix_instruction": {
+            "oneOf": [
+              { "type": "null" },
+              {
+                "type": "object",
+                "required": ["action", "target_node_name", "property", "current_value", "correct_value"],
+                "additionalProperties": false,
+                "properties": {
+                  "action": {
+                    "type": "string",
+                    "enum": [
+                      "set_fill", "set_padding", "set_gap", "set_font",
+                      "swap_variant", "resize", "reposition", "set_opacity",
+                      "set_stroke", "set_radius", "set_text", "set_prop"
+                    ]
+                  },
+                  "target_node_name": { "type": "string" },
+                  "property": { "type": "string" },
+                  "current_value": { "type": "string" },
+                  "correct_value": { "type": "string" },
+                  "figma_api_hint": { "type": "string" }
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    "summary_by_category": {
+      "type": "object",
+      "required": ["structure", "spacing", "color", "typography", "component", "state", "accessibility"],
+      "additionalProperties": false,
+      "properties": {
+        "structure": { "$ref": "#/definitions/categorySummary" },
+        "spacing": { "$ref": "#/definitions/categorySummary" },
+        "color": { "$ref": "#/definitions/categorySummary" },
+        "typography": { "$ref": "#/definitions/categorySummary" },
+        "component": { "$ref": "#/definitions/categorySummary" },
+        "state": { "$ref": "#/definitions/categorySummary" },
+        "accessibility": { "$ref": "#/definitions/categorySummary" }
+      }
+    },
+    "blocking_fixes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["check_id", "summary", "priority"],
+        "additionalProperties": false,
+        "properties": {
+          "check_id": { "type": "string" },
+          "summary": { "type": "string" },
+          "priority": { "type": "integer", "minimum": 1 }
+        }
+      }
+    },
+    "correction_script_hints": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Ordered list of figma_execute corrections to apply"
+    },
+    "validator_notes": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  },
+  "definitions": {
+    "categorySummary": {
+      "type": "object",
+      "required": ["pass", "fail", "warn"],
+      "additionalProperties": false,
+      "properties": {
+        "pass": { "type": "integer", "minimum": 0 },
+        "fail": { "type": "integer", "minimum": 0 },
+        "warn": { "type": "integer", "minimum": 0 },
+        "skip": { "type": "integer", "minimum": 0 }
+      }
+    }
+  }
+}

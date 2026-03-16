@@ -1,0 +1,96 @@
+goal: "Read annotation-targets.json, snapshot each target node's current Figma state, parse instructions into structured deltas, determine which pipeline agents to invoke, and produce target-snapshot.json and targeted-run-plan.json"
+
+context: |
+  The targeted-intake-agent runs after annotation-scanner in a TARGETED pipeline run.
+  It bridges the raw user instructions (node IDs + free-text) and the pipeline's agent
+  system by: capturing before-state, inferring what properties change, and deciding the
+  minimum set of agents needed to execute the iteration.
+
+  Inputs:
+    - annotation-targets.json — node IDs, instructions, intents, scopes
+    - token-map.json — existing token registry (if available from prior run)
+    - component-manifest.json — existing component registry (if available)
+    - pipeline.config.json — run metadata
+
+  Phase 1 — Snapshot each target node:
+    For each target, call figma_execute to extract current properties (fills, strokes,
+    cornerRadius, opacity, padding, itemSpacing, layoutMode, width, height, fontSize,
+    variantProperties, componentProperties). For COMPONENT and COMPONENT_SET nodes,
+    also read variantGroupProperties.
+    Call figma_capture_screenshot(nodeId) to capture before-state image URL.
+    Store null for screenshot URL if capture fails — do not block on failure.
+
+  Phase 2 — Infer structured deltas:
+    Parse each instruction for change signals:
+      "prominent", "stand out", "contrast"  → fills / increase_contrast
+      "looser", "breathing room", "spacing" → padding / increase
+      "tighter", "compact"                  → padding / decrease
+      "add [state]" e.g. "add loading"      → variants / add_state
+      "colour", "color"                     → fills / change_color
+      "fix contrast", "accessibility"       → fills / fix_contrast
+      "typography", "font", "text size"     → typography / update
+      "layout", "structure", "reflow"       → layout / restructure
+      "rename", "label"                     → content / rename
+    Multiple signals may match — include all inferred changes.
+
+  Phase 3 — Determine agent routing:
+    scope=element,   changes=fills/typography/spacing  → token-system-builder(patch), figma-instruction-writer, design-validator
+    scope=instance,  changes=variant/props only        → figma-instruction-writer, design-validator
+    scope=component, no new variants                   → token-system-builder(patch), figma-instruction-writer, design-validator
+    scope=component, new variants/states required      → component-architect(single,patch), component-builder, figma-instruction-writer, design-validator
+    scope=frame,     token/spacing change              → token-system-builder(patch), organism-composer(single screen,patch), figma-instruction-writer, design-validator
+    scope=frame,     structural/layout change          → creative-director(patch), token-system-builder(patch), component-architect(gap check,patch), organism-composer(single,patch), figma-instruction-writer, design-validator
+
+    Set patch_mode: true for token-system-builder, component-architect, organism-composer,
+    creative-director when they appear.
+
+  Output 1 — target-snapshot.json:
+    {
+      "meta": { "captured_at": "ISO8601", "total_targets": integer },
+      "snapshots": [
+        {
+          "node_id": "string",
+          "node_name": "string",
+          "node_type": "string",
+          "page_name": "string",
+          "scope": "frame|component|instance|element",
+          "before_screenshot_url": "string or null",
+          "properties": { <extracted node properties> },
+          "instruction": "string",
+          "intent": "iterate|redesign|fix|review",
+          "constraints": "string or null",
+          "inferred_changes": [ { "property": "string", "intent": "string", "state": "string or null" } ],
+          "agents_required": ["stage-name"],
+          "patch_mode": true
+        }
+      ]
+    }
+
+  Output 2 — targeted-run-plan.json:
+    {
+      "meta": { "created_at": "ISO8601", "total_targets": integer, "elicitation_mode": "TARGETED" },
+      "run_stages": [
+        { "stage": "token-system-builder", "patch_mode": true, "targets": ["node_id"] },
+        { "stage": "figma-instruction-writer", "patch_mode": false, "targets": ["node_id"] },
+        { "stage": "design-validator", "patch_mode": false, "targets": ["node_id"] }
+      ],
+      "skipped_stages": ["requirements-analyst", "flow-architect", ...]
+    }
+
+constraints:
+  - "Never modify annotation-targets.json — treat it as immutable input"
+  - "Always attempt figma_capture_screenshot for each target — record null on failure, never block"
+  - "patch_mode: true means the downstream agent reads its existing output and applies targeted changes only"
+  - "agents_required must contain at minimum figma-instruction-writer and design-validator"
+  - "Write both target-snapshot.json and targeted-run-plan.json before declaring completion"
+  - "All file reads and writes must be scoped to the pipeline working directory"
+
+acceptance_criteria:
+  - "target-snapshot.json is written with one snapshot per annotation-targets.json entry"
+  - "Every snapshot has: node_id, node_name, node_type, page_name, scope, properties, instruction, intent, inferred_changes, agents_required, patch_mode"
+  - "inferred_changes is a non-empty array for every snapshot (at least one change inferred)"
+  - "agents_required always includes figma-instruction-writer and design-validator"
+  - "before_screenshot_url is present in every snapshot (may be null if capture failed)"
+  - "targeted-run-plan.json is written with run_stages and skipped_stages arrays"
+  - "patch_mode is true for token-system-builder, component-architect, organism-composer, creative-director when present in run_stages"
+  - "skipped_stages lists every standard pipeline stage not in run_stages"

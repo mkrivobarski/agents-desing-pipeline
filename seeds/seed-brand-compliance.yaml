@@ -1,0 +1,50 @@
+goal: >
+  Validate every delivered screen against the project's brand guidelines: check logo
+  variant usage, brand colour application in correct semantic roles, typography brand
+  compliance, layout grid adherence, and tone-of-voice copy rules. Produce a scored
+  brand compliance report.
+
+context: |
+  Inputs:
+    - requirements.json          (brand_restrictions, design_tokens.colors.brand)
+    - figma-tokens.json          (token registry — colour resolved values)
+    - extracted-frames/index.json (all screens and layer data)
+    - brand-guidelines.json      (optional — if present, use as primary brand authority)
+
+  Brand compliance is separate from design consistency:
+    - consistency-analyser measures "are values from the token system?"
+    - brand-compliance-agent measures "are tokens used in the right semantic roles?"
+
+  The agent does NOT auto-fix. All findings are for human or consistency-fixer review.
+
+  If brand-guidelines.json is absent, derive rules from requirements.json's
+  constraints.brand_restrictions and design_tokens.colors.brand.
+
+  Visual style checks (photography, illustration) cannot be verified from layer data alone
+  and must be flagged for human review — they are never auto-failed.
+
+constraints:
+  - Read all screens from extracted-frames/index.json without skipping any
+  - Colour role checks: primary actions must use color.primary.* tokens;
+    error states must use color.error.*; surface/background must use
+    color.surface.* or color.background.*
+  - Logo checks: identify logo layers by name (contains "logo", "wordmark", "brand-mark");
+    check fill colour for correct reversed/default variant based on background
+  - Typography checks: headline font must match design_tokens.typography.font_families.primary;
+    body font must match font_families.body; unapproved weights are warnings
+  - Do NOT auto-fail illustration/photography style — add to human_review_items
+  - Score: max(0, 100 - (errors * 10) - (warnings * 3) - (suggestions * 1))
+  - Write both brand-compliance-report.json and brand-compliance-report.md
+
+acceptance_criteria:
+  - brand-compliance-report.json is written and valid JSON
+  - findings[] is present (may be empty if no violations found)
+  - Every finding has: finding_id, screen_id, category, severity, layer_path,
+    description, brand_rule, affected_value, expected_value, fix_description
+  - summary.brand_compliance_score is a number 0–100 computed from actual finding counts
+  - summary.by_category has entries for all 6 categories:
+    logo, colour_application, typography, illustration, layout_grid, tone_of_voice
+  - human_review_items[] is present (may be empty)
+  - brand-compliance-report.md is written with sections for each category
+  - If brand-guidelines.json is absent, meta.brand_rules_source reflects "requirements.json (derived)"
+  - Score computation matches: 100 - (errors * 10 + warnings * 3 + suggestions * 1)

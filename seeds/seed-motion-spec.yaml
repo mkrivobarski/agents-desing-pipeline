@@ -1,0 +1,67 @@
+goal: >
+  Produce a complete motion specification for all screen transitions and micro-interactions
+  in the design: assign Figma prototype transition types (MOVE_IN, DISSOLVE, SMART_ANIMATE)
+  per navigation edge, define micro-interaction specs for all interactive components, and
+  export code-ready animation specs for CSS and React Native. Update Figma prototype
+  reactions where transitions differ from existing ones.
+
+context: |
+  Inputs:
+    - user-flows.json           (from flow-architect — all navigation edges with trigger types)
+    - screen-blueprints.json    (structural context — component types per slot)
+    - requirements.json         (design_tokens.motion — duration and easing tokens)
+    - figma-source.json         (optional — for nodeId resolution when updating reactions)
+    - prototype-links.json      (optional — existing prototype reactions; augment, don't replace)
+
+  Motion specification has two layers:
+    1. Screen transitions — what happens when navigating between screens
+    2. Micro-interactions — what happens when interacting with components
+
+  Default duration tokens (override with requirements.json values if defined):
+    fast=150ms, normal=250ms, slow=400ms, deliberate=600ms
+
+  Default easing tokens:
+    standard=cubic-bezier(0.2,0,0,1), decelerate=cubic-bezier(0,0,0.2,1),
+    accelerate=cubic-bezier(0.3,0,1,0.8), spring=spring(1,100,10,0), linear=linear
+
+  Transition assignment rules:
+    push forward        → MOVE_IN RIGHT,  decelerate, normal
+    back/pop            → MOVE_OUT RIGHT, accelerate, fast
+    modal present       → MOVE_IN BOTTOM, decelerate, slow
+    modal dismiss       → MOVE_OUT BOTTOM,accelerate, normal
+    tab switch          → DISSOLVE, standard, fast
+    onboarding step     → SMART_ANIMATE, spring, normal
+    auto-advance (timer)→ DISSOLVE, linear, slow
+    overlay open        → MOVE_IN (OVERLAY nav), decelerate, fast
+    deep link / reset   → DISSOLVE, standard, normal
+
+  When updating Figma prototype reactions:
+    - Use setReactionsAsync([...node.reactions, newReaction]) — never overwrite all reactions
+    - actions: [{...}] array format (NOT action: {} object)
+    - Wrap entire script in async IIFE
+
+constraints:
+  - Every edge in user-flows.json MUST have a corresponding screen_transitions entry
+  - Duration and easing must reference token names from requirements.json if defined;
+    fall back to the defaults above if not present
+  - CSS and react_native fields are mandatory for every transition — no empty strings
+  - When figma_execute is called to update reactions, wrap in try/catch per node;
+    record outcomes in figma_reaction_updates[]
+  - micro_interactions[] must cover all interactive component types present in screen-blueprints.json
+  - Write motion-spec.json before declaring completion
+
+acceptance_criteria:
+  - motion-spec.json is written and valid JSON
+  - screen_transitions[] has one entry per edge in user-flows.json
+  - Each screen_transitions entry has: transition_id, edge_id, source_screen, target_screen,
+    pattern, duration_token, duration_ms, easing_token, easing_curve,
+    figma_transition (with type, direction, duration, easing), css, react_native
+  - micro_interactions[] is present with at least one entry per interactive component type
+    found in screen-blueprints.json
+  - figma_reaction_updates[] is present; each entry has: edge_id, source_node_id,
+    old_transition, new_transition, status (updated|skipped|failed)
+  - duration_tokens and easing_tokens objects are populated
+  - meta.total_transitions equals the count of edges in user-flows.json
+  - css field in every transition is a valid CSS transition/animation string
+  - react_native field in every transition is a valid React Native Animated config string
+  - No transition entry has empty css or react_native values

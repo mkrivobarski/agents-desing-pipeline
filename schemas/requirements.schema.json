@@ -1,0 +1,210 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "requirements.schema.json",
+  "title": "Design Requirements",
+  "description": "Structured design requirements produced by the requirements-analyst agent from unstructured input documents.",
+  "type": "object",
+  "required": ["meta", "screens", "flows", "design_tokens", "component_hints", "constraints"],
+  "additionalProperties": false,
+  "properties": {
+    "meta": {
+      "type": "object",
+      "required": ["project_name", "version", "created_at", "source_documents", "platform_targets"],
+      "additionalProperties": false,
+      "properties": {
+        "project_name": { "type": "string", "minLength": 1 },
+        "version": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$" },
+        "created_at": { "type": "string", "format": "date-time" },
+        "source_documents": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "platform_targets": {
+          "type": "array",
+          "items": { "type": "string", "enum": ["web", "ios", "android", "desktop"] },
+          "minItems": 1
+        },
+        "primary_personas": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": { "type": "string" },
+              "description": { "type": "string" }
+            }
+          }
+        },
+        "design_system": {
+          "type": "object",
+          "description": "External component/design system to use as a baseline before building custom components.",
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "type": "string",
+              "enum": ["material", "ant-design", "radix", "chakra", "shadcn", "carbon", "fluent", "none"],
+              "description": "Canonical identifier for the external design system. Use 'none' to opt out of external reuse."
+            },
+            "version": {
+              "type": "string",
+              "description": "Semver or release tag for the design system (e.g. '5.0.0', 'v14'). Optional."
+            },
+            "figma_library_key": {
+              "type": "string",
+              "description": "Figma file key for the connected external component library, if available."
+            },
+            "token_override_strategy": {
+              "type": "string",
+              "enum": ["css_custom_properties", "theme_object", "style_override", "none"],
+              "description": "How the external system accepts token overrides. Informs Phase 1.5 token-compatibility scoring in component-architect."
+            },
+            "notes": {
+              "type": "string",
+              "description": "Free-text rationale for the design system choice or known constraints."
+            }
+          },
+          "required": ["name"]
+        }
+      }
+    },
+    "screens": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["screen_id", "screen_name", "description", "platform", "states", "entry_points", "exit_points", "priority"],
+        "additionalProperties": false,
+        "properties": {
+          "screen_id": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]*$",
+            "description": "Unique snake_case identifier for the screen"
+          },
+          "screen_name": { "type": "string", "minLength": 1 },
+          "description": { "type": "string" },
+          "platform": {
+            "type": "array",
+            "items": { "type": "string", "enum": ["web", "ios", "android", "desktop"] }
+          },
+          "states": {
+            "type": "array",
+            "items": { "type": "string", "enum": ["default", "loading", "error", "empty", "success", "authenticated", "unauthenticated"] },
+            "minItems": 1
+          },
+          "entry_points": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "screen_ids that navigate to this screen"
+          },
+          "exit_points": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "screen_ids this screen navigates to"
+          },
+          "conditional_visibility": {
+            "oneOf": [
+              { "type": "null" },
+              { "type": "string" }
+            ]
+          },
+          "priority": {
+            "type": "string",
+            "enum": ["p0", "p1", "p2"],
+            "description": "p0=must have, p1=should have, p2=nice to have"
+          },
+          "notes": { "type": "string" }
+        }
+      }
+    },
+    "flows": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["flow_id", "flow_name", "flow_type", "screens"],
+        "additionalProperties": false,
+        "properties": {
+          "flow_id": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
+          "flow_name": { "type": "string" },
+          "flow_type": {
+            "type": "string",
+            "enum": ["primary", "secondary", "error", "onboarding", "settings", "admin"]
+          },
+          "screens": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Ordered list of screen_ids in this flow"
+          },
+          "description": { "type": "string" }
+        }
+      }
+    },
+    "design_tokens": {
+      "type": "object",
+      "required": ["colors", "typography", "spacing"],
+      "additionalProperties": false,
+      "properties": {
+        "colors": {
+          "type": "object",
+          "properties": {
+            "brand": { "type": "object" },
+            "semantic": { "type": "object" },
+            "dark_mode": { "type": "object" }
+          }
+        },
+        "typography": {
+          "type": "object",
+          "properties": {
+            "font_families": { "type": "object" },
+            "type_scale": { "type": "object" }
+          }
+        },
+        "spacing": {
+          "type": "object",
+          "required": ["base_unit"],
+          "properties": {
+            "base_unit": { "type": "number", "minimum": 1 },
+            "scale": { "type": "object" }
+          }
+        },
+        "shape": { "type": "object" },
+        "motion": { "type": "object" },
+        "elevation": { "type": "object" }
+      }
+    },
+    "component_hints": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["component_name", "category", "source"],
+        "additionalProperties": false,
+        "properties": {
+          "component_name": { "type": "string" },
+          "category": { "type": "string", "enum": ["atom", "molecule", "organism", "template"] },
+          "source": { "type": "string", "enum": ["library", "custom"] },
+          "screens_used_in": { "type": "array", "items": { "type": "string" } },
+          "notes": { "type": "string" }
+        }
+      }
+    },
+    "constraints": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "accessibility": {
+          "type": "object",
+          "properties": {
+            "wcag_level": { "type": "string", "enum": ["A", "AA", "AAA"] },
+            "specific_requirements": { "type": "array", "items": { "type": "string" } }
+          }
+        },
+        "performance": { "type": "object" },
+        "browser_support": { "type": "array", "items": { "type": "string" } },
+        "localization": { "type": "object" },
+        "brand_restrictions": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "analyst_notes": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Ambiguities identified during analysis and how they were resolved"
+    }
+  }
+}

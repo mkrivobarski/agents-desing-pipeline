@@ -1,0 +1,244 @@
+goal: "Validate Figma-built screens against blueprints, token maps, and component library using depth-6 live node extraction, producing per-screen validation reports with parity scores, blocking fixes, and correction script hints"
+
+context: |
+  The design-validator agent runs after figma-instruction-writer scripts have been
+  executed. It reads actual property values directly from live Figma nodes via
+  figma_execute — never estimates from screenshots alone. It produces one JSON report
+  and one markdown summary per screen+state combination.
+
+  Inputs:
+    - built-component-library.json — expected component node IDs, variant keys, props
+    - screen-blueprints.json — structural specification (zones, slots, layout, states)
+    - token-map.json — expected token assignments and resolved hex values
+    - component-manifest.json — expected components, variants, props, layout per slot
+    - organism-manifest.json — organism-to-zone placements and prop_overrides per screen
+    - screenshots/[screen_id]__[state].png — visual reference (secondary; API values primary)
+
+  ─── GROUND TRUTH EXTRACTION (required before any checks) ─────────────────
+
+  For every screen being validated, run this figma_execute query at DEPTH 6.
+  Depth 3 is insufficient — component-first screens are 4–6 levels deep
+  (screen frame → zone → organism instance → molecule → atom → text/fill).
+
+    (async () => {
+      const screen = await figma.getNodeByIdAsync(SCREEN_NODE_ID);
+      if (!screen) return { error: 'node_not_found' };
+
+      function extractNode(node, depth) {
+        const base = {
+          id: node.id, name: node.name, type: node.type,
+          width: node.width, height: node.height,
+          x: node.x, y: node.y
+        };
+        if ('paddingLeft' in node) {
+          Object.assign(base, {
+            paddingLeft: node.paddingLeft, paddingRight: node.paddingRight,
+            paddingTop: node.paddingTop,   paddingBottom: node.paddingBottom,
+            itemSpacing: node.itemSpacing, layoutMode: node.layoutMode,
+            primaryAxisAlignItems: node.primaryAxisAlignItems,
+            counterAxisAlignItems: node.counterAxisAlignItems,
+            layoutSizingHorizontal: node.layoutSizingHorizontal,
+            layoutSizingVertical:   node.layoutSizingVertical
+          });
+        }
+        if ('fills' in node && node.fills.length > 0) {
+          base.fills = node.fills.map(f => ({
+            type: f.type,
+            color: f.color ? { r: f.color.r, g: f.color.g, b: f.color.b } : null,
+            opacity: f.opacity
+          }));
+        }
+        if ('fontSize' in node) {
+          Object.assign(base, {
+            fontSize: node.fontSize, fontName: node.fontName,
+            lineHeight: node.lineHeight, letterSpacing: node.letterSpacing,
+            textAlignHorizontal: node.textAlignHorizontal,
+            characters: node.characters
+          });
+        }
+        if ('cornerRadius' in node) base.cornerRadius = node.cornerRadius;
+        if ('strokes' in node && node.strokes.length > 0) {
+          base.strokes = node.strokes.map(s => ({ type: s.type, color: s.color }));
+          base.strokeWeight = node.strokeWeight;
+        }
+        if (node.type === 'INSTANCE') {
+          base.variantProperties  = node.variantProperties  ?? null;
+          base.componentProperties = node.componentProperties ?? null;
+          base.overrides          = node.overrides           ?? [];
+          base.mainComponentId    = node.mainComponent ? node.mainComponent.id : null;
+        }
+        if (depth > 0 && 'children' in node) {
+          base.children = node.children.map(c => extractNode(c, depth - 1));
+        }
+        return base;
+      }
+
+      return extractNode(screen, 6);
+    })()
+
+  Use the returned node tree as ground_truth for all checks.
+  Only fall back to screenshot estimation for properties not exposed by the API
+  (e.g., rendered icon pixel dimensions).
+
+  Converting figma_execute color floats to hex:
+    Math.round(channel * 255).toString(16).padStart(2, '0')  (uppercase)
+
+  ─── 8 CHECK CATEGORIES ───────────────────────────────────────────────────
+
+  1. structure — zones and layout
+     - Every zone from the blueprint for this state is present in ground_truth.children
+     - Zone names follow zone__[zone_id] convention
+     - Zone vertical order matches blueprint layout
+     - Fixed vs. scrollable zones correctly positioned
+     - No unexpected zones outside the blueprint
+
+  2. instance — component correctness
+     For each INSTANCE node in ground_truth:
+     - ground_truth.mainComponentId matches the node_id in built-component-library.json
+       for the expected organism/variant
+     - ground_truth.variantProperties matches variant_selection from organism-manifest.json
+     - ground_truth.componentProperties reflects all prop_overrides from placement
+     - ground_truth.overrides contains only intended overrides — unexpected overrides
+       indicate misapplied setProperties
+
+  3. spacing — padding, gaps, alignment
+     - Zone padding values match padding_horizontal/padding_vertical token resolved values
+     - itemSpacing matches gap token resolved values (tolerance: ±2px)
+     - Content aligns to grid (multiples of base unit from token-map.json)
+     - Fill-width components: layoutSizingHorizontal === "FILL"
+     Report: expected value, actual value, delta in px, affected element path
+
+  4. color — fills, text, borders
+     For every visible element, compare ground_truth.fills hex (converted) to
+     token-map.json resolved_value:
+     - Background colors match token hex
+     - Text colors match foreground token
+     - Border colors match border-color token
+     - Overlay/scrim colors use correct opacity
+
+  5. typography — family, size, weight, line-height
+     For every text node in ground_truth:
+     - fontName.family matches typography token (heading_family or body_family)
+     - fontSize matches type scale token value (exact)
+     - fontName.style matches weight token (Regular/Medium/SemiBold/Bold)
+     - lineHeight matches line-height token
+
+  6. component — variant and prop correctness
+     Using ground_truth.variantProperties:
+     - Correct variant applied (exact key from built-component-library.json)
+     - Correct state (Default/Hover/Disabled/Loading)
+     - Icon presence/absence matches props in organism-manifest.json
+     - Badges, indicators, decorators present/absent per spec
+
+  7. state — loading/error/empty completeness
+     loading: skeleton/shimmer elements present where specified; interactive elements disabled
+     error: error_message visible, error icon present, retry button present
+     empty: illustration present, empty message matches spec, CTA visible
+
+  8. accessibility — touch targets and contrast
+     - Interactive elements ≥ 44×44pt (mobile) or ≥ 32×32px (web)
+     - Text appears legible (visual assessment from screenshot as fallback)
+     - Focus indicators present on focused elements
+
+  ─── CHECK SHAPE ──────────────────────────────────────────────────────────
+
+  Each check entry:
+    check_id: unique string (e.g. "structure__zone_header_presence")
+    check_category: structure|instance|spacing|color|typography|component|state|accessibility
+    check_name: human-readable name
+    element_path: "zone_id > organism_id > slot_id"
+    result: PASS|FAIL|WARN|SKIP
+    expected: expected value or description
+    actual: actual value from ground_truth (or screenshot if API unavailable)
+    delta: quantified difference ("+8px", "wrong color #FF0000 vs #1A73E8") or null
+    severity: blocking|major|minor|cosmetic
+    fix_instruction: (required if result is FAIL or WARN)
+      action: set_fill|set_padding|set_gap|set_font|swap_variant|set_property|
+              resize|reposition|set_opacity|rerun_component_builder
+      target_node_name: e.g. "login__header__Header"
+      property: e.g. "paddingLeft"
+      current_value: string
+      correct_value: string
+      figma_api_hint: correct Figma Plugin API syntax
+
+  Severity definitions:
+    blocking  — wrong component instance, missing zone, or missing required slot
+    major     — significant visual deviation; should fix before delivery
+    minor     — small deviation; fix if time permits
+    cosmetic  — trivial; optional
+
+  If ground_truth data is unavailable for a property, set result: "SKIP" with reason
+  in the actual field. Never report PASS on an unverifiable check.
+
+  ─── PARITY SCORE ─────────────────────────────────────────────────────────
+
+    parity_score = (pass_count + warn_count * 0.5) / total_checks
+
+    ≥ 0.95 → overall_result: PASS
+    ≥ 0.85 → overall_result: WARN
+    < 0.85 → overall_result: FAIL
+
+  ─── CORRECTION LOOP ──────────────────────────────────────────────────────
+
+  If overall_result is FAIL:
+    - Populate blocking_fixes with all severity: blocking checks, priority-ordered
+    - Emit correction_script_hints as a prioritised list of figma_execute corrections
+    - Pipeline will re-invoke figma-instruction-writer with correction hints
+    - Maximum 3 correction loops before escalating to human review
+    - If a blocking check has action: rerun_component_builder, a script correction
+      cannot fix it — the component must be rebuilt from component-builder
+
+  If overall_result is WARN:
+    - Do not block pipeline progression
+    - Add all WARN items to the delivery package as known deviations
+
+  ─── OUTPUT FILES ─────────────────────────────────────────────────────────
+
+  Write validation-reports/[screen_id]__[state]__report.json:
+    meta:
+      screen_id, state, screenshot_file, validated_at, validator_version: "2.0"
+      overall_result: PASS|FAIL|WARN
+      pass_count, fail_count, warn_count, skip_count
+      parity_score: float
+    checks: array (one entry per check)
+    summary_by_category:
+      structure, instance, spacing, color, typography, component, state, accessibility
+      — each: { pass, fail, warn, skip }
+    blocking_fixes: array of { check_id, summary, priority }
+    correction_script_hints: array of prioritised figma_execute correction strings
+    validator_notes: array
+
+  Write validation-reports/[screen_id]__[state]__summary.md:
+    Human-readable summary with parity score, overall result, pass/fail/warn counts,
+    blocking issues list, and top correction hints.
+
+constraints:
+  - "Run figma_execute ground truth extraction at depth 6 for every screen before writing any checks"
+  - "Never estimate values from screenshots when the property is readable via the Figma API"
+  - "Every slot from screen-blueprints.json must have at least one check entry"
+  - "Check ground_truth.variantProperties, ground_truth.componentProperties, and ground_truth.overrides for every INSTANCE node"
+  - "Cross-reference ground_truth.mainComponentId against built-component-library.json for every instance check"
+  - "Do not report PASS on an unverifiable check — use result: SKIP with a reason"
+  - "fix_instruction is required for every FAIL and WARN check"
+  - "fix_instruction.figma_api_hint must use correct Figma Plugin API syntax"
+  - "Never flag issues with properties not in the specification"
+  - "actual values in checks must come from ground_truth where the property is API-readable"
+  - "parity_score must be computed as (pass_count + warn_count * 0.5) / total_checks"
+  - "overall_result must be PASS if parity_score ≥ 0.95, WARN if ≥ 0.85, FAIL otherwise"
+  - "blocking_fixes must list all checks with severity: blocking, ordered by priority"
+  - "Write both report JSON and summary markdown for each screen+state before declaring completion"
+  - "All file reads and writes must be scoped to the pipeline working directory"
+
+acceptance_criteria:
+  - "One validation-reports/[screen_id]__[state]__report.json per screen+state combination"
+  - "One validation-reports/[screen_id]__[state]__summary.md per screen+state combination"
+  - "Every report meta includes validator_version: '2.0', overall_result, parity_score, and pass/fail/warn/skip counts"
+  - "parity_score is a float between 0.0 and 1.0 computed from the defined formula"
+  - "overall_result correctly reflects the parity_score threshold (PASS ≥ 0.95, WARN ≥ 0.85, FAIL < 0.85)"
+  - "Every zone from screen-blueprints.json for the validated state appears in checks as at least one structure check"
+  - "Every INSTANCE node in ground_truth has at least one instance check verifying mainComponentId and variantProperties"
+  - "Every FAIL and WARN check has a non-null fix_instruction with action, target_node_name, and figma_api_hint"
+  - "No check reports PASS on a property that cannot be read from the Figma API — SKIP is used instead"
+  - "summary_by_category contains all 8 categories with pass/fail/warn/skip counts"
+  - "blocking_fixes lists all severity: blocking checks with priority ordering"
+  - "correction_script_hints is present (may be empty array if overall_result is PASS)"

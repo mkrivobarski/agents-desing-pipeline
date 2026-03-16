@@ -1,0 +1,79 @@
+goal: "Scan the active Figma file for pending pipeline iteration instructions submitted via the Desktop Bridge plugin panel, produce annotation-targets.json, and mark queued nodes as processing"
+
+context: |
+  The annotation-scanner agent is the first agent in a TARGETED pipeline run. Users submit
+  iteration instructions directly from Figma using the Desktop Bridge plugin panel — they
+  select a node, type an instruction, choose an intent, and hit Submit. The plugin stores the
+  instruction in sharedPluginData('pipeline', 'instruction') on the node.
+
+  This agent reads those instructions via figma_execute (Figma Console MCP), validates
+  and enriches the entries, and writes annotation-targets.json for targeted-intake-agent.
+
+  Inputs:
+    - Live Figma file (queried via figma_execute)
+    - pipeline.config.json — working directory
+
+  Phase 1 — Fetch queue:
+    Call figma_execute with a script that calls figma.loadAllPagesAsync() then scans all
+    pages with findAll + getSharedPluginData('pipeline','instruction'), filtering for
+    entries where status === 'pending'.
+    If queue is empty: write annotation-targets.json with empty targets[] and stop.
+
+  Phase 2 — Validate and enrich entries:
+    For each queue entry:
+      - Confirm nodeId, nodeName, nodeType, instruction are non-empty. Skip if any missing.
+      - Parse intent (iterate | redesign | fix | review). Default: iterate.
+      - Infer scope from nodeType:
+          FRAME or SECTION            → "frame"
+          COMPONENT or COMPONENT_SET  → "component"
+          INSTANCE                    → "instance"
+          All other types             → "element"
+      - Carry pageName, constraints, submittedAt as-is.
+
+  Phase 3 — Write annotation-targets.json:
+    {
+      "meta": {
+        "scanned_at": "ISO8601",
+        "total_pending": integer,
+        "total_skipped": integer,
+        "figma_file_key": "string or null"
+      },
+      "targets": [
+        {
+          "node_id": "123:456",
+          "node_name": "string",
+          "node_type": "INSTANCE",
+          "page_name": "Hi-Fi Screens",
+          "scope": "instance",
+          "instruction": "Make this button more prominent",
+          "intent": "iterate",
+          "constraints": "string or null",
+          "submitted_at": 1700000000000
+        }
+      ],
+      "scanner_notes": []
+    }
+
+  Phase 4 — Mark as processing:
+    Call figma_execute for each included target with a script that reads the existing
+    sharedPluginData, sets status: "processing" and processedAt: Date.now(), then
+    writes back via setSharedPluginData('pipeline','instruction', JSON.stringify(entry)).
+    This prevents double-processing on subsequent runs before the pipeline completes.
+
+constraints:
+  - "Use figma_execute to read the queue — no named figma_read_pipeline_queue tool exists"
+  - "Use figma_execute to mark processing — no named figma_update_pipeline_status tool exists"
+  - "Skip entries with empty instruction or missing nodeId — never infer instructions from names"
+  - "Write annotation-targets.json even if targets is empty (empty array, not absent key)"
+  - "Mark all included targets as processing before declaring completion"
+  - "All file reads and writes must be scoped to the pipeline working directory"
+
+acceptance_criteria:
+  - "annotation-targets.json is written to the working directory"
+  - "annotation-targets.json meta.scanned_at is a valid ISO8601 timestamp"
+  - "Every entry in targets[] has: node_id, node_name, node_type, page_name, scope, instruction, intent"
+  - "scope is one of: frame, component, instance, element"
+  - "intent is one of: iterate, redesign, fix, review"
+  - "All included targets have been marked as processing via figma_execute"
+  - "Skipped entries are explained in scanner_notes"
+  - "If the queue was empty, targets is an empty array and scanner_notes records 'Queue empty'"

@@ -1,0 +1,178 @@
+goal: "Assemble all validated pipeline outputs into a final ordered delivery package — screen sequence, handoff documentation, token coverage report, code-connect mapping, run diff, and run history snapshot"
+
+context: |
+  The delivery-sequencer is the final agent in the pipeline. It runs after design-validator
+  has produced per-screen validation reports. It assembles all pipeline artifacts into a
+  complete delivery package consumable by engineering teams and stakeholders.
+
+  Inputs (read all from working directory):
+    - requirements.json
+    - user-flows.json
+    - screen-blueprints.json
+    - token-map.json
+    - component-manifest.json
+    - organism-manifest.json
+    - validation-reports/ — all [screen_id]__[state]__report.json files
+    - figma-scripts/index.json
+    - screenshots/ — rendered screen screenshots
+    - run-history.json (if exists — for run diff)
+    - figma-source.json (if exists — for figma_file_key)
+
+  ─── STEP 0: Write run-history.json snapshot (do this FIRST) ──────────────────
+
+  Read run-history.json if it exists (it is an array). Append a new run entry — never
+  overwrite existing entries. If the file does not exist, create it as a new array.
+
+    {
+      "run_id": "run_YYYYMMDD_HHMMSS",
+      "ran_at": "ISO8601",
+      "pipeline_version": "1.0",
+      "project_name": "string",
+      "figma_file_key": "string (from figma-source.json if present)",
+      "screens_in_run": ["screen_id_1"],
+      "screens_skipped": [],
+      "token_count": 0,
+      "component_count": 0,
+      "overall_validation_pass_rate": 0.0,
+      "token_coverage_rate": 0.0,
+      "delivery_version": "1.0.0",
+      "artifacts": ["delivery-package.json", "delivery-package/HANDOFF.md", "delivery-package/TOKEN_COVERAGE.md", "delivery-package/CODE_CONNECT.md"],
+      "known_issues": []
+    }
+
+  ─── STEP 1: Run diff ──────────────────────────────────────────────────────────
+
+  After writing the snapshot, check run-history.json for prior runs. If a previous
+  run exists, compute:
+    - screens_added: screenIds present in this run but not the previous
+    - screens_removed: screenIds in the previous run but absent now
+    - parity_regressions: screens where parity_score decreased by > 0.05
+    - token_coverage_change: difference in token_coverage_rate between runs
+  If no prior run, set first_run: true.
+
+  ─── STEP 2: Screen validation gating ─────────────────────────────────────────
+
+  Read every validation-reports/[screen_id]__[state]__report.json.
+  Screens with overall_result: PASS or WARN → include in sequence (mark WARN clearly)
+  Screens with overall_result: FAIL → exclude; add to screens_excluded with reason
+  Screens with no validation report → exclude with reason "no_validation_report"
+
+  ─── STEP 3: Screen sequence assembly ─────────────────────────────────────────
+
+  Order validated screens using user-flows.json:
+    - Group by flow (onboarding → core flows → edge cases)
+    - Within each flow, breadth-first from entry points, happy path first
+    - Number each screen: 01_screen_id, 02_screen_id, ...
+    - For each screen, include all states as sub-items: 01a_default, 01b_loading, 01c_error
+
+  ─── STEP 4: Per-screen handoff data ──────────────────────────────────────────
+
+  For each screen in the sequence, produce:
+    - purpose: what this screen does
+    - requirement_traceability: requirements.json IDs this screen satisfies
+    - components_used: list from organism-manifest.json (component_name, variant, instance count)
+    - tokens_used: list from token-map.json slot_token_maps for this screen
+    - navigation_annotations: incoming (from, trigger, condition) + outgoing (to, trigger, animation)
+    - spacing_callouts: key measurements for engineering
+    - developer_notes and accessibility_notes from screen-blueprints.json annotations
+
+  ─── STEP 5: Token coverage report ───────────────────────────────────────────
+
+  Compute from token-map.json slot_token_maps:
+    - overall_coverage_rate = slots_with_all_tokens_mapped / total_slots
+    - coverage_by_category (colour, spacing, typography, radius, etc.)
+    - most_used_tokens (top 10)
+    - unused_tokens (defined in token-map.json but never referenced in slot_token_maps)
+    - missing_tokens_summary from token-map.json missing_tokens
+    - hardcoded_values_summary from token-map.json fallbacks
+
+  ─── STEP 6: Code-connect mapping ─────────────────────────────────────────────
+
+  Map every component in component-manifest.json to its code counterpart.
+  Only access codebase_root if access.codebase_access: true in pipeline.config.json.
+  Otherwise set all status: "missing_code" and note in sequencer_notes.
+
+  status values: mapped | missing_code | missing_figma_key | custom_required
+
+  ─── STEP 7: Delivery checklist ───────────────────────────────────────────────
+
+  Always include all 10 standard items:
+    1. All required screens designed and validated
+    2. All screen states (loading, error, empty) included
+    3. Token coverage ≥ 90%
+    4. No blocking validation failures
+    5. All navigation paths annotated
+    6. Accessibility notes on every screen
+    7. Custom component specifications included
+    8. Figma file organized with sections per flow
+    9. Component manifest complete with all prop values
+    10. Code-connect mapping produced
+
+  ─── delivery-package.json SCHEMA (abbreviated) ───────────────────────────────
+
+  {
+    "meta": { "project_name", "delivery_version", "delivered_at", "pipeline_run_id", "total_screens", "total_flows", "overall_validation_pass_rate", "token_coverage_rate", "component_library_coverage_rate" },
+    "executive_summary": { "product_overview", "screens_delivered", "flows_delivered", "design_system_compliance_score", "blockers", "known_deviations", "engineering_notes" },
+    "screen_sequence": [
+      {
+        "sequence_number": "01",
+        "sequence_id": "01_screen_id",
+        "screen_id", "screen_name", "flow_id", "flow_name",
+        "validation_result": "PASS|WARN",
+        "parity_score": 0.0,
+        "screenshot_file",
+        "states": [{ "state", "sequence_sub_id", "screenshot_file", "validation_result" }],
+        "navigation_annotations": { "incoming_from": [{ "screen_id", "trigger", "condition" }], "outgoing_to": [{ "screen_id", "trigger", "condition", "animation" }] },
+        "requirement_traceability": [],
+        "handoff": { "purpose", "components_used": [{ "component_name", "variant", "instance_count" }], "tokens_used": [], "spacing_callouts": [{ "element", "property", "value", "token" }], "developer_notes", "accessibility_notes" }
+      }
+    ],
+    "screens_excluded": [{ "screen_id", "exclusion_reason" }],
+    "token_coverage_report": { "overall_coverage_rate", "coverage_by_category", "most_used_tokens", "unused_tokens", "missing_tokens_summary": { "total", "blocking", "resolved", "items" }, "hardcoded_values_summary": { "total", "items" } },
+    "code_connect_mapping": [{ "component_name", "figma_component_key", "code_import_path", "status": "mapped|missing_code|missing_figma_key|custom_required", "notes" }],
+    "delivery_checklist": [{ "item", "status": "complete|incomplete|not_applicable", "notes" }],
+    "run_diff": { "previous_run_id", "screens_added", "screens_removed", "parity_regressions": [{ "screen_id", "previous_score", "current_score", "delta" }], "token_coverage_change", "first_run" },
+    "sequencer_notes": []
+  }
+
+  Write delivery-package/HANDOFF.md — full handoff document in Markdown:
+    # Design Handoff — [Project Name]
+    ## Executive Summary
+    ## Screen Inventory (table: Seq | Screen | States | Validation | Figma Link)
+    ## Screen Details (one section per screen: purpose, components, tokens, navigation, dev notes)
+    ## Open Action Items
+
+  Write delivery-package/TOKEN_COVERAGE.md — token coverage in Markdown:
+    # Token Coverage Report
+    ## Summary (overall rate, by category table)
+    ## Missing Tokens
+    ## Hardcoded Values
+
+  Write delivery-package/CODE_CONNECT.md — code-connect mapping in Markdown:
+    # Code-Connect Mapping
+    ## Component Status Table (component | figma key | code path | status)
+    ## Components Requiring Implementation
+
+constraints:
+  - "Write run-history.json FIRST — append new entry, never overwrite existing entries"
+  - "Only include screens with validation_result PASS or WARN — FAIL screens go to screens_excluded"
+  - "Mark WARN screens clearly in the handoff — engineering must know about deviations"
+  - "Screen sequence order must follow user-flows.json breadth-first from entry points"
+  - "Coverage rates must be computed from actual token-map.json data — not estimated"
+  - "Codebase access requires access.codebase_access: true in pipeline.config.json"
+  - "delivery_checklist must include all 10 standard items"
+  - "Write delivery-package.json AND all three markdown files before declaring completion"
+  - "All file reads and writes must be scoped to the pipeline working directory"
+
+acceptance_criteria:
+  - "run-history.json is written (or updated with new appended entry) before any other output"
+  - "delivery-package.json is written and valid JSON"
+  - "delivery-package/HANDOFF.md, delivery-package/TOKEN_COVERAGE.md, and delivery-package/CODE_CONNECT.md are all written"
+  - "Every screen in screen_sequence has a validation report with overall_result PASS or WARN"
+  - "screens_excluded is present (may be empty); each entry has screen_id and exclusion_reason"
+  - "Screen sequence order matches breadth-first traversal of user-flows.json from entry points"
+  - "token_coverage_report.overall_coverage_rate is computed from actual data"
+  - "run_diff is present; first_run is true if no prior run existed"
+  - "delivery_checklist contains all 10 standard items each with a status"
+  - "executive_summary.blockers lists all screens_excluded entries as actionable blockers"
+  - "HANDOFF.md contains: project name heading, executive summary, screen inventory table, and open action items"

@@ -1,0 +1,177 @@
+goal: "Wire all Figma prototype navigation links from user-flows.json — setting prototype reactions on frame nodes and registering flow starting points so the prototype is immediately playable"
+
+context: |
+  The prototype-linker runs after all Hi-Fi screens are built on the 'Hi-Fi Screens' page.
+  It reads user-flows.json for edge definitions and figma-source.json for node ID resolution,
+  then applies prototype reactions in batches via figma_execute.
+
+  Inputs:
+    - user-flows.json — flows, nodes, and edges with trigger/animation_hint per edge
+    - figma-source.json — maps screenId → frameNodeId
+      If figma-source.json is absent, fall back to extracted-frames/index.json
+
+  ─── PRE-FLIGHT VALIDATION (required before any figma_execute calls) ─────────────
+
+  1. Node ID resolution: for every screenId in user-flows.json edges, confirm it maps to a
+     nodeId in figma-source.json. Collect unresolvable screen IDs in errors[] — skip edges
+     that reference them but do not abort the run.
+
+  2. File connectivity check: call figma_get_file_data(verbosity: "summary", depth: 1).
+     If this fails, abort and report the connection error.
+
+  3. Duplicate edge detection: if two edges share the same from_node and the same trigger
+     type, flag the second as duplicate and skip it. Record in validationResults.preflight.
+
+  ─── TRIGGER MAPPING ───────────────────────────────────────────────────────────────
+
+  user-flows.json trigger.type → Figma trigger:
+    user_action (element: button/link)  → ON_CLICK
+    user_action (element: hover)        → ON_HOVER (web prototypes only)
+    user_action (element: press)        → ON_PRESS
+    user_action (element: drag/swipe)   → DRAG
+    system_event                        → ON_CLICK (apply to source frame)
+    timer                               → AFTER_TIMEOUT (timeout: 2000; override from edge metadata)
+    auth_change                         → ON_CLICK
+    back_navigation (is_back_navigation: true) → ON_BACK_GESTURE
+    deep_link entry points              → flow starting point only (no reaction)
+
+  ─── ANIMATION HINT MAPPING ────────────────────────────────────────────────────────
+
+  animation_hint → Figma transition:
+    push          → SMART_ANIMATE, direction: LEFT,   easing: EASE_OUT,       duration: 0.3
+    pop           → SMART_ANIMATE, direction: RIGHT,  easing: EASE_OUT,       duration: 0.3
+    fade          → DISSOLVE,                         easing: EASE_OUT,       duration: 0.25
+    modal_present → MOVE_IN,       direction: BOTTOM, easing: EASE_OUT,       duration: 0.35
+    modal_dismiss → MOVE_OUT,      direction: BOTTOM, easing: EASE_IN,        duration: 0.3
+    none          → INSTANT
+    (not specified) → SMART_ANIMATE,                  easing: EASE_OUT,       duration: 0.3
+
+  ─── NAVIGATION TYPE ───────────────────────────────────────────────────────────────
+
+  target node_type modal or bottom_sheet → navigation: 'OVERLAY'
+  overlayPositionType: 'BOTTOM_CENTER' (bottom_sheet) or 'CENTER' (modal)
+  all others → navigation: 'NAVIGATE'
+
+  ─── FIGMA PROTOTYPE API PATTERNS ──────────────────────────────────────────────────
+
+  All figma_execute calls must use the action object shape (not actions array):
+
+    // Navigate reaction
+    const node = await figma.getNodeByIdAsync(sourceNodeId);
+    node.reactions = [
+      ...node.reactions,
+      {
+        trigger: { type: 'ON_CLICK' },
+        action: {
+          type: 'NODE',
+          destinationId: targetNodeId,
+          navigation: 'NAVIGATE',
+          transition: { type: 'SMART_ANIMATE', easing: { type: 'EASE_OUT' }, duration: 0.3 }
+        }
+      }
+    ];
+
+    // Back gesture reaction
+    node.reactions = [
+      ...node.reactions,
+      { trigger: { type: 'ON_BACK_GESTURE' }, action: { type: 'BACK' } }
+    ];
+
+    // Timeout reaction
+    node.reactions = [
+      ...node.reactions,
+      {
+        trigger: { type: 'AFTER_TIMEOUT', timeout: 2000 },
+        action: { type: 'NODE', destinationId: targetNodeId, navigation: 'NAVIGATE',
+                  transition: { type: 'DISSOLVE', easing: { type: 'EASE_OUT' }, duration: 0.25 } }
+      }
+    ];
+
+    // Flow starting point — direct property assignment (setFlowStartingPointsAsync does not exist)
+    const page = figma.currentPage;
+    const existing = new Set((page.flowStartingPoints || []).map(f => f.nodeId));
+    if (!existing.has(nodeId)) {
+      page.flowStartingPoints = [...(page.flowStartingPoints || []), { nodeId, name: flowName }];
+    }
+
+  ─── EXECUTION STRATEGY ────────────────────────────────────────────────────────────
+
+  Process edges in batches of up to 10 per figma_execute call. Each call is a
+  self-contained async IIFE with try/catch per edge — record failures and continue:
+
+    (async () => {
+      const results = [];
+      for (const edge of edges) {
+        try {
+          const src = await figma.getNodeByIdAsync(edge.sourceNodeId);
+          if (!src) { results.push({ edgeId: edge.edgeId, status: 'failed', error: 'Source not found' }); continue; }
+          const tgt = await figma.getNodeByIdAsync(edge.targetNodeId);
+          if (!tgt) { results.push({ edgeId: edge.edgeId, status: 'failed', error: 'Target not found' }); continue; }
+          src.reactions = [...src.reactions, { trigger: edge.trigger, action: edge.action }];
+          results.push({ edgeId: edge.edgeId, status: 'created' });
+        } catch (err) {
+          results.push({ edgeId: edge.edgeId, status: 'failed', error: err.message });
+        }
+      }
+      return results;
+    })()
+
+  Do not retry failed edges — record and continue.
+
+  ─── POST-APPLY VALIDATION ─────────────────────────────────────────────────────────
+
+  After all batches, call figma_get_file_data with the list of source node IDs at depth 1.
+  Confirm each expected source node has a non-empty reactions array. Missing → record as failed.
+  Then call figma_take_screenshot for each flow entry-point frame. Record screenshotUrl.
+
+  ─── prototype-links.json SCHEMA ───────────────────────────────────────────────────
+
+  {
+    "meta": {
+      "generated_at": "ISO8601",
+      "figmaFileKey": "string",
+      "totalEdgesAttempted": 0,
+      "totalCreated": 0,
+      "totalFailed": 0,
+      "totalSkipped": 0
+    },
+    "flows": [
+      { "flowId": "string", "name": "string", "startNodeId": "string", "startScreenName": "string", "status": "created|skipped|failed", "screenshotUrl": "string or null" }
+    ],
+    "links": [
+      { "edgeId": "string", "sourceScreenId": "string", "sourceNodeId": "string", "sourceScreenName": "string", "targetScreenId": "string", "targetNodeId": "string", "targetScreenName": "string", "triggerType": "ON_CLICK|ON_HOVER|ON_PRESS|DRAG|AFTER_TIMEOUT|ON_BACK_GESTURE", "navigationMode": "NAVIGATE|OVERLAY|BACK", "transitionType": "SMART_ANIMATE|DISSOLVE|MOVE_IN|MOVE_OUT|INSTANT", "status": "created|failed|skipped", "skipReason": null, "errorMessage": null }
+    ],
+    "errors": [
+      { "type": "node_not_found|connection_error|duplicate_trigger|api_error", "edgeId": "string or null", "screenId": "string or null", "message": "string", "resolution": "string" }
+    ],
+    "validationResults": {
+      "preflight": { "nodeResolutionPass": true, "unresolvedScreenIds": [], "duplicateEdgesSkipped": [] },
+      "postApply": { "reactionsConfirmed": 0, "reactionsMissing": [] }
+    }
+  }
+
+constraints:
+  - "Call figma_get_file_data(verbosity: 'summary', depth: 1) first — abort if the file is inaccessible"
+  - "Always spread existing reactions (...node.reactions) before appending — never overwrite all reactions"
+  - "Never apply a reaction to a COMPONENT node — only FRAME or INSTANCE nodes representing full screens"
+  - "Back navigation edges (is_back_navigation: true) use ON_BACK_GESTURE with action.type: 'BACK' — never a NODE action"
+  - "Modal and bottom_sheet targets use navigation: 'OVERLAY' not 'NAVIGATE'"
+  - "AFTER_TIMEOUT triggers must include a timeout field in milliseconds (default 2000)"
+  - "Flow starting points must not duplicate existing page.flowStartingPoints — check before appending"
+  - "Process all edges even if some fail — only abort on total connection failure"
+  - "Use await figma.setCurrentPageAsync() — never direct page assignment"
+  - "WRITE-CAPABLE: Only run when listed in access.figma_write_agents in pipeline.config.json"
+  - "Write prototype-links.json before the post-apply screenshot calls"
+  - "All file reads and writes must be scoped to the pipeline working directory"
+
+acceptance_criteria:
+  - "prototype-links.json is written and valid JSON"
+  - "validationResults.preflight records node resolution outcomes"
+  - "flows[] contains one entry per entry-point screen (type: 'app_launch', 'deep_link', or 'tab_root') in user-flows.json"
+  - "links[] contains one entry per edge in user-flows.json (status: created|failed|skipped)"
+  - "Each link entry has: edgeId, sourceNodeId, targetNodeId, triggerType, navigationMode, transitionType, status"
+  - "errors[] is present (may be empty); each error has type, message, and resolution"
+  - "validationResults.postApply.reactionsConfirmed equals the count of links with status: created"
+  - "flows[].screenshotUrl is populated for every created flow starting point"
+  - "All skipped/failed links have skipReason or errorMessage recorded"
+  - "figma_take_screenshot is called for each flow entry-point frame after all links are applied"

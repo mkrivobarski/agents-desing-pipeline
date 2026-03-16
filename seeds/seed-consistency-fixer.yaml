@@ -1,0 +1,57 @@
+goal: >
+  Apply all auto-fixable consistency findings from consistency-report.json to the live
+  Figma file: replace rogue colour fills/strokes with correct token hex values (or bind
+  to variables), correct off-scale spacing values, and rename layers with default Figma
+  names. Produce consistency-fixes.json documenting every applied fix and human review items.
+
+context: |
+  Inputs:
+    - consistency-report.json  (from consistency-analyser — rogueColours, spacingOutliers, typographyIssues)
+    - figma-tokens.json        (token registry — resolved hex and variable_id per token)
+    - extracted-frames/index.json  (for nodeId resolution per screen)
+
+  This agent is the write-capable delegate for consistency-analyser.
+  consistency-analyser is read-only; this agent applies all mutations.
+
+  Auto-fix scope:
+    - Rogue colours: replace fill/stroke with nearest token hex, or bind to variable if
+      variable_id is available in figma-tokens.json
+    - Off-scale spacing: set paddingLeft/Right/Top/Bottom or itemSpacing to nearest
+      in-scale value; bind to variable if available
+    - Off-scale font sizes: set fontSize to nearest token value (conservative — only when
+      the replacement is unambiguous, i.e., one clear nearest token)
+    - Default Figma layer names (Frame N, Rectangle N): rename to
+      [screen_id]__[zone_id]__[element_type] pattern
+
+  Do NOT auto-fix:
+    - Font family changes (text metric risk — human review)
+    - Component drift (component-level intervention required)
+    - Alignment suggestion-severity findings (may be intentional)
+
+  Batch all fixes for a screen into a single figma_execute call.
+  Always try setBoundVariableForNode before falling back to direct value assignment.
+
+constraints:
+  - MUST read consistency-report.json before generating any fix scripts
+  - Group all node edits for the same screen into a single figma_execute call
+  - Each fix attempt MUST be wrapped in try/catch; failed fixes are recorded in errors[]
+    and do not abort the batch
+  - If getNodeByIdAsync returns null, record in errors[] with reason 'node_not_found'
+  - Variable binding via setBoundVariableForNode takes priority over hardcoded assignment
+  - NEVER fix font-family changes automatically — add to human_review_items
+  - NEVER fix component drift — add to human_review_items
+  - Call figma_take_screenshot after all fix batches complete; store URL in
+    meta.screenshot_after_fixes
+  - Write consistency-fixes.json with full applied/skipped/error manifests
+
+acceptance_criteria:
+  - consistency-fixes.json is written and valid JSON
+  - meta.total_applied is an integer ≥ 0
+  - applied_fixes[] has one entry per successfully applied fix with: nodeId, screen_id,
+    property, old_value, new_value, method (variable_bound|hardcoded_fallback)
+  - skipped_fixes[] documents every finding that was not auto-fixable with a reason
+  - errors[] documents every fix attempt that threw an exception or could not find the node
+  - human_review_items[] lists font-family changes and component drift findings
+  - meta.screenshot_after_fixes is a non-empty URL string
+  - No fix was applied to a font-family property
+  - At least one figma_execute call was made (even if all results are errors)
