@@ -289,6 +289,46 @@ Write `token-map.json`:
 }
 ```
 
+## Patch Mode
+
+When invoked with `patch_mode: true` (from `targeted-run-plan.json`), this agent performs a **targeted token update** rather than rebuilding the full three-collection system.
+
+### Patch Mode Inputs
+
+In addition to standard inputs, read:
+- `targeted-run-plan.json` — `targets[]` listing the node IDs in scope
+- `target-snapshot.json` — `inferred_changes[]` per target, indicating which properties are changing (fills, typography, padding, spacing, etc.)
+- Existing `token-map.json` — the base to patch
+
+### Patch Mode Behavior
+
+1. **Scope restriction**: Only evaluate tokens referenced by the `inferred_changes[]` for the listed targets. Do not rebuild all three collections from scratch.
+2. **Identify affected tokens**: Map each `inferred_change.property` to the token categories it affects:
+   - `fills` → color tokens in Semantic or Component collection
+   - `padding` / `spacing` → spacing tokens in Semantic or Component collection
+   - `typography` → typography tokens in Primitives
+   - `strokes` → border-color or border-width tokens
+3. **Check existing variables**: For each affected token, call `figma_get_variables` to check if it already exists.
+   - Correct value → no action, confirm `variable_id` in `token-map.json`
+   - Wrong value → update via `figma_batch_update_variables`
+   - Missing → create via `figma_batch_create_variables`
+4. **Update `token-map.json` in place**: Merge new or updated token entries into the existing file. Do not remove existing entries unless they conflict with the patch.
+5. **Skip full WCAG sweep**: Only re-run contrast checks for the specific token pairs that changed.
+
+### Patch Mode Output
+
+Append a `patch_summary` field to `token-map.json`:
+```json
+"patch_summary": {
+  "patch_mode": true,
+  "targets_evaluated": ["123:456"],
+  "tokens_added": 0,
+  "tokens_updated": 2,
+  "tokens_unchanged": 0,
+  "contrast_rechecked": ["Semantic/Color/Text/primary vs Semantic/Color/Background/default"]
+}
+```
+
 ## Rules
 
 - Use `figma_batch_create_variables` and `figma_batch_update_variables` exclusively — never single-variable calls

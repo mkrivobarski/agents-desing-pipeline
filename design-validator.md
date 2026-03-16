@@ -265,6 +265,51 @@ If `overall_result` is WARN:
 2. Flag non-blocking issues but do not block pipeline progression
 3. Add all WARN items to the delivery package as known deviations
 
+## Patch Mode
+
+When invoked after a patch run (targeted pipeline), this agent validates **only the nodes that were modified**, not the full screen set.
+
+### Patch Mode Inputs
+
+In addition to standard inputs, read:
+- `targeted-run-plan.json` — `targets[]` in scope
+- `target-snapshot.json` — `before_screenshot_url`, `properties` (before state), `inferred_changes[]`
+- `figma-scripts/patches/` — the patch scripts that were executed (to understand what was changed)
+
+### Patch Mode Behavior
+
+1. **Scope restriction**: Only validate the target nodes listed in `targeted-run-plan.json`. Do not re-validate unaffected screens.
+2. **Before/after comparison**: Use `target-snapshot.json`'s `properties` as the "before" baseline. Run the depth-6 `figma_execute` extraction on the same node IDs to get the "after" state.
+3. **Change-targeted checks**: Only run checks relevant to the `inferred_changes[]` categories:
+   - `fills` → run color checks only
+   - `padding` / `spacing` → run spacing checks only
+   - `typography` → run typography checks only
+   - `variants` → run instance and component variant checks
+   - `layout` → run structural and spacing checks
+4. **Reduced check set**: Skip structural zone presence checks, state completeness checks, and accessibility sweeps unless `intent: "redesign"` or `intent: "fix"` is set on the target.
+5. **Write-back status**: After validation completes, call `figma_execute` for each validated node to update its `sharedPluginData` status to `"done"` (or `"failed"` with an error if blocking issues remain).
+
+### Patch Mode Status Write-Back
+
+For each validated target, execute:
+
+```javascript
+const node = await figma.getNodeByIdAsync('NODE_ID');
+if (!node) return { error: 'not found' };
+const raw = node.getSharedPluginData('pipeline', 'instruction');
+const entry = raw ? JSON.parse(raw) : {};
+entry.status = 'done'; // or 'failed'
+entry.processedAt = Date.now();
+entry.runId = 'RUN_ID';
+// if failed: entry.error = 'description of blocking issue';
+node.setSharedPluginData('pipeline', 'instruction', JSON.stringify(entry));
+return { ok: true };
+```
+
+### Patch Mode Output
+
+Write `validation-reports/patch__[node_id_sanitized]__report.json` with the same schema as a full validation report, but scoped to the changed properties only. Include `patch_mode: true` in the `meta` block.
+
 ## Rules
 - Run the `figma_execute` ground truth extraction at **depth 6** for every screen before writing any checks. Depth 3 will miss atom-level fills and text properties inside organism instances.
 - Check `node.variantProperties`, `node.componentProperties`, and `node.overrides` for every INSTANCE node — these are the ground truth for component-correctness checks

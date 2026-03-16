@@ -322,6 +322,41 @@ Output `component-build-plan.json` with a `build_order` array where index 0 is b
 }
 ```
 
+## Patch Mode
+
+When invoked with `patch_mode: true` (from `targeted-run-plan.json`), this agent performs a **targeted gap check** rather than a full rebuild.
+
+### Patch Mode Inputs
+
+In addition to standard inputs, read:
+- `targeted-run-plan.json` — `targets[]` listing the node IDs in scope
+- `target-snapshot.json` — `inferred_changes[]` per target, indicating what properties are changing
+- Existing `component-manifest.json` and `component-build-plan.json` — the base to patch
+
+### Patch Mode Behavior
+
+1. **Scope restriction**: Only evaluate the components referenced by the `targets[]` node IDs in `targeted-run-plan.json`. Do not re-evaluate the full blueprint.
+2. **Gap check only**: Check whether the `inferred_changes[]` for each target require:
+   - A new variant or state (e.g., adding a `Loading` state to an existing atom)
+   - A new component that doesn't exist in `component-manifest.json`
+   - A structural change to an existing component's API contract
+3. **If no new components or variants are required**: Write no output — report `patch_required: false` and skip. `figma-instruction-writer` can proceed directly.
+4. **If new variants/components are required**: Append only the new entries to `component-build-plan.json` and `component-manifest.json`. Do not regenerate or overwrite existing entries.
+5. **Phase 1.5 still applies**: If the targeted change references a component that could use an external library component, run Phase 1.5 for that component only.
+
+### Patch Mode Output
+
+Append a `patch_summary` field to both output files:
+```json
+"patch_summary": {
+  "patch_mode": true,
+  "targets_evaluated": ["123:456"],
+  "new_components_added": 0,
+  "new_variants_added": 1,
+  "patch_required": true
+}
+```
+
 ## Rules
 
 - ALWAYS run the live Figma discovery query before writing either output file

@@ -133,6 +133,40 @@ Write `organism-manifest.json`:
 }
 ```
 
+## Patch Mode
+
+When invoked with `patch_mode: true` (from `targeted-run-plan.json`), this agent performs a **single-screen placement update** rather than composing the full organism manifest.
+
+### Patch Mode Inputs
+
+In addition to standard inputs, read:
+- `targeted-run-plan.json` — `targets[]` listing the node IDs in scope, and which screen(s) they belong to
+- `target-snapshot.json` — `scope`, `page_name` per target to identify which screen to update
+- Existing `organism-manifest.json` — the base to patch
+
+### Patch Mode Behavior
+
+1. **Scope restriction**: Only re-evaluate the screen(s) that contain the targeted node IDs. Derive the `screen_id` from `target-snapshot.json`'s `page_name` and `node_name`.
+2. **Organism delta**: Determine whether the targeted change requires:
+   - A new organism placement (e.g., adding a new zone to an existing screen)
+   - A prop or variant override change to an existing placement
+   - A shared organism update that propagates to all screens that use it
+3. **Shared organism handling**: If the targeted organism is `is_shared: true`, update `per_screen_overrides` for the affected screen only — do not regenerate placements for unaffected screens.
+4. **Update `organism-manifest.json` in place**: Merge updated entries. Do not remove existing organism definitions unless they are being explicitly replaced.
+
+### Patch Mode Output
+
+Append a `patch_summary` field to `organism-manifest.json`:
+```json
+"patch_summary": {
+  "patch_mode": true,
+  "screens_updated": ["home"],
+  "organisms_modified": 1,
+  "new_placements_added": 0,
+  "shared_organisms_updated": 0
+}
+```
+
 ## Rules
 
 - `organism-manifest.json` entries MUST NOT contain `parentId` — parent resolution happens at script execution time in `figma-instruction-writer`
