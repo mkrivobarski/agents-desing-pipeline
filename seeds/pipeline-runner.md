@@ -1,12 +1,93 @@
 # Design Production Pipeline — Runner Guide
 
-This document explains how to execute the 8-stage design production pipeline using the
-Ouroboros `execute_seed` tool, how to pass outputs between stages, how to handle failures,
-and the complete pipeline as pseudocode.
+This document explains how to execute the design production pipeline, including the
+new **Ouroboros seed entry path** that bypasses the freeform brief intake step.
 
 ---
 
-## Pipeline Overview
+## Entry Paths
+
+```
+┌─ Option A: Brief ─────────────────────────────────────────────────────────┐
+│  /design-pipe:new → requirements-analyst (brief mode) → Stage 2 onward    │
+└────────────────────────────────────────────────────────────────────────────┘
+
+┌─ Option B: Ouroboros Seed (meta-configuration) ────────────────────────────┐
+│  seed-from-ooo-seed.yaml → pipeline.config.json + requirements.json        │
+│  (no agent interview; seed IS the spec) → Stage 2 onward                   │
+└────────────────────────────────────────────────────────────────────────────┘
+
+┌─ Option A+: Ouroboros Seed (as structured brief) ──────────────────────────┐
+│  /design-pipe:seed → requirements-analyst (SEED mode) → Stage 2 onward     │
+│  (seed mapped to requirements.json; pipeline continues as normal)           │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+### When to use each
+
+| Situation | Entry path |
+|---|---|
+| You have a written brief or PRD | `/design-pipe:new` |
+| You ran `ooo interview` + `ooo seed` and have a product seed | `/design-pipe:seed` |
+| You want to run the pipeline programmatically from a seed file | `seed-from-ooo-seed.yaml` then Stage 2 |
+| You have a Figma file and want to enhance/review it | `/design-pipe:review` |
+
+---
+
+## Ouroboros Seed Entry Path (Option B — Programmatic)
+
+Use `seed-from-ooo-seed.yaml` when you want the pipeline to derive its full
+configuration from an Ouroboros product seed without any user interview.
+
+```
+ouroboros execute_seed(
+  seed_content = file("seeds/seed-from-ooo-seed.yaml"),
+  context = {
+    seed_path:   "/path/to/my-product.seed.yaml",
+    figma_url:   "https://www.figma.com/design/...",
+    working_dir: "/path/to/run/directory"
+  }
+)
+```
+
+This writes `pipeline.config.json`, `requirements.json`, `reference-materials.json`,
+and `pipeline-intake.json` — then you continue from Stage 2 as normal.
+
+### Seed field → pipeline config mapping
+
+| Seed field | Maps to |
+|---|---|
+| `goal` | `project_name`, scope inference |
+| `constraints` | `platform_targets`, `design_system.name`, `accessibility.wcag_level`, `scope_notes` |
+| `acceptance_criteria` | `screens[]` (p0), `seed_gates` thresholds |
+| `ontology_schema` | `screens[]` (p1), `component_hints` |
+| `context` | `primary_personas`, `competitive_references`, additional screens |
+
+### Key invariants the pipeline must honour when running from a seed
+
+1. **seed.constraints are hard rules.** They are NOT overridable by creative-director
+   or component-architect. If a downstream agent would violate a seed constraint
+   (e.g. "no third-party platforms may store personal data"), it must escalate rather
+   than silently deviate.
+
+2. **seed.acceptance_criteria define "done".** They drive GATE 4 (parity) and the
+   delivery package success conditions. Any `seed_gates` thresholds in `pipeline.config.json`
+   override the default gate thresholds.
+
+3. **seed.ontology_schema is the authoritative domain model.** Entities become the
+   ground truth for data binding in screen blueprints and component props. Do not
+   invent entity structures that contradict the schema.
+
+4. **No re-interview.** The seed was produced by a Socratic interview that already
+   resolved ambiguity ≤ 0.2. Pipeline agents must not ask the user to re-confirm
+   things the seed has already decided.
+
+5. **Source tagging.** All values derived from the seed use `source: "seed"` in
+   requirements.json and token maps — not `"inferred"` or `"reference_material"`.
+
+---
+
+
 
 ```
 [Brief / Brand Docs]
@@ -633,14 +714,15 @@ jsonschema --instance "$WORKDIR/screen-blueprints.json" "$SCHEMAS/screen-bluepri
 echo "[Stage 3] PASS"
 
 # ─────────────────────────────────────────────
-# STAGE 4: Token Mapping
+# STAGE 4: Token System Build
 # ─────────────────────────────────────────────
-echo "[Stage 4] Mapping design tokens..."
+echo "[Stage 4] Building token system..."
 
 ouroboros execute_seed \
-  --seed "$SEEDS/seed-token-mapping.yaml" \
+  --seed "$SEEDS/seed-token-system.yaml" \
   --session "$SESSION_ID" \
   --context blueprints_path="$WORKDIR/screen-blueprints.json" \
+  --context creative_direction_path="$WORKDIR/creative-direction.json" \
   --context theme_path="/path/to/design-tokens.json" \
   --context schema_path="$SCHEMAS/token-map.schema.json" \
   --workdir "$WORKDIR"
@@ -649,23 +731,23 @@ jsonschema --instance "$WORKDIR/token-map.json" "$SCHEMAS/token-map.schema.json"
   || { echo "FAIL Stage 4: token-map.json invalid"; exit 1; }
 
 COVERAGE=$(jq '.coverage_score' "$WORKDIR/token-map.json")
-COVERAGE_OK=$(echo "$COVERAGE >= 80" | bc -l)
+COVERAGE_OK=$(echo "$COVERAGE >= 90" | bc -l)
 [ "$COVERAGE_OK" -eq 1 ] \
-  || { echo "FAIL Stage 4: coverage_score=$COVERAGE is below 80%"; exit 1; }
+  || { echo "FAIL Stage 4: coverage_score=$COVERAGE is below 90%"; exit 1; }
 
 echo "[Stage 4] PASS — token coverage: $COVERAGE%"
 
 # ─────────────────────────────────────────────
-# STAGE 5: Component Manifest
+# STAGE 5: Component Build Plan
 # ─────────────────────────────────────────────
-echo "[Stage 5] Resolving component manifest..."
+echo "[Stage 5] Generating component build plan..."
 
 ouroboros execute_seed \
-  --seed "$SEEDS/seed-component-manifest.yaml" \
+  --seed "$SEEDS/seed-component-build-plan.yaml" \
   --session "$SESSION_ID" \
   --context blueprints_path="$WORKDIR/screen-blueprints.json" \
   --context token_map_path="$WORKDIR/token-map.json" \
-  --context library_path="/path/to/component-library.json" \
+  --context creative_direction_path="$WORKDIR/creative-direction.json" \
   --context schema_path="$SCHEMAS/component-manifest.schema.json" \
   --workdir "$WORKDIR"
 

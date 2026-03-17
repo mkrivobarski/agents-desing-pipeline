@@ -143,9 +143,9 @@ The pipeline runs in two modes:
 |---|---|---|---|
 | `journey-mapper` | `requirements.json`, `user-flows.json` | `journey-map.json`, Figma "Journey Maps" page | First pipeline artifact |
 | `lo-fi-builder` | `screen-blueprints.json`, `user-flows.json` | `lo-fi-frames/index.json`, Figma "Lo-Fi Wireframes" page | Grey-box structural wireframes |
-| `creative-director` | `reference-materials.json`, `requirements.json`, `journey-map.json` | `creative-direction.json` | **NEW** — makes all open visual decisions: palette, type, icons, shape, media, motion; downstream agents read this as authoritative source |
-| `token-system-builder` | `creative-direction.json`, `screen-blueprints.json`, `requirements.json`, theme files | `token-map.json` + committed Figma Variable collections | Replaces `token-mapper`; reads creative-direction for all colour, type, and radius values |
-| `component-architect` | `screen-blueprints.json`, `token-map.json`, `requirements.json`, `creative-direction.json` | `component-manifest.json`, `component-build-plan.json` | Replaces `component-resolver`; uses creative-direction for density, radius, and icon sizing |
+| `creative-director` | `reference-materials.json`, `requirements.json`, `journey-map.json` | `creative-direction.json` | Makes all open visual decisions: palette, type, icons, shape, media, motion; downstream agents read this as authoritative source |
+| `token-system-builder` | `creative-direction.json`, `screen-blueprints.json`, `requirements.json`, theme files | `token-map.json` + committed Figma Variable collections | Reads creative-direction for all colour, type, and radius values |
+| `component-architect` | `screen-blueprints.json`, `token-map.json`, `requirements.json`, `creative-direction.json` | `component-manifest.json`, `component-build-plan.json` | Uses creative-direction for density, radius, and icon sizing |
 | `component-builder` | `component-build-plan.json`, `token-map.json` | `built-component-library.json` + Figma COMPONENT nodes | Builds real Figma COMPONENT_SET nodes via `combineAsVariants` |
 | `organism-composer` | `built-component-library.json`, `component-manifest.json`, `screen-blueprints.json` | `organism-manifest.json` | Placement manifest only; no Figma calls; no `parentId` |
 | `figma-instruction-writer` | `organism-manifest.json`, `built-component-library.json`, `component-manifest.json`, `token-map.json`, `creative-direction.json` | `figma-scripts/[screen_id].js` | Applies image treatment, icon sizes, and font loading from creative-direction |
@@ -305,7 +305,7 @@ screen-blueprints.json ────┤
 4. design-review-agent    → design-review-report.md     ← review & act on findings
 5. consistency-analyser   → consistency-report.md        ← review & act on findings
 6. flow-architect         → user-flows.json
-7. [continue core pipeline from token-mapper...]
+7. [continue core pipeline from token-system-builder...]
 8. prototype-linker       → Figma prototype links created
 9. delivery-sequencer     → HANDOFF.md
 ```
@@ -357,7 +357,7 @@ Opportunities identified through analysis of the pipeline's actual Figma manipul
 |---|---|---|---|---|
 | 4 | **Vision pass in `design-validator`** — send screenshot to Claude vision alongside structured checks for quality issues (hierarchy, whitespace rhythm, brand feel) | `design-validator` | #3 first | Correctness and quality are different axes; accurate measurements (#3) make vision feedback more targeted |
 | 5 | **Design system binding in `figma-instruction-writer`** — implement both Figma Variable binding (`setBoundVariableForNode()`) and named styles application (`figma_get_styles` references) together in one upgrade | `figma-instruction-writer` | — | These are the same class of fix: bind to the design system instead of hardcode values; always implement together — doing one without the other is a half-measure |
-| 6 | **Live component key discovery** — `component-resolver` calls `figma_search_components` + `figma_get_component_details` before writing the manifest so `component_key` and `figma_node_id` are always real values | `component-resolver` | — | Prerequisite for #10; without real keys, #10 builds components but can't instantiate them from published libraries |
+| 6 | **Live component key discovery** — `component-architect` calls `figma_search_components` + `figma_get_component_details` before writing the manifest so `component_key` and `figma_node_id` are always real values | `component-architect` | — | Prerequisite for #10; without real keys, #10 builds components but can't instantiate them from published libraries |
 | 7 | **Advanced Auto Layout coverage** — add `layoutWrap`, `layoutPositioning='ABSOLUTE'`, `minWidth`/`maxWidth`, `strokesIncludedInLayout` to instruction-writer rules | `figma-instruction-writer` | — | Independent of #5; wrapping grids, floating badges, and responsive constraints produce incorrect output without this |
 | 8 | **Pipeline state versioning** — `delivery-sequencer` emits `pipeline-state.json` with scores, timestamps, artifact hashes, and frame property snapshots per run | `delivery-sequencer` | — | Prerequisite for #11 (diff scripts need previous state) and for DELTA mode in #17 (intake agent needs run history) |
 
