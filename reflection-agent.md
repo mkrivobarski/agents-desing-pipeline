@@ -48,7 +48,7 @@ From `consistency-fixes.json.human_review_items`:
 ### Signal Type 4: Token Binding Failures
 From validation reports and script return objects:
 - Tokens that fell back to hardcoded values (variable_id not found) are logged as `fallbacks`
-- Recurring fallbacks indicate token-mapper is not populating `variable_id` correctly
+- Recurring fallbacks indicate token-system-builder is not populating `variable_id` correctly
 
 ### Signal Type 5: Missing Component Keys
 From `component-manifest.json`:
@@ -71,7 +71,7 @@ Patterns live in `pipeline_memory_dir/patterns.json`:
     "confidence": 0.75,
     "example_value": "The incorrect value or pattern observed",
     "correct_value": "The expected correct value",
-    "affected_agent": "figma-instruction-writer|token-mapper|component-resolver|...",
+    "affected_agent": "figma-instruction-writer|token-system-builder|component-architect|...",
     "promotion_status": "observed|soft_context|hard_constraint|permanent_rule",
     "promoted_at_run": null,
     "rule_text": null
@@ -114,7 +114,7 @@ Write to `pipeline_memory_dir/hard-constraints.json` — injected into agent Rul
 [
   {
     "pattern_id": "pat_004",
-    "agent": "token-mapper",
+    "agent": "token-system-builder",
     "constraint": "Always populate variable_id for COLOR tokens when figma-tokens.json contains a VariableID for the matching token. Runs that omit variable_id cause token binding fallbacks.",
     "promoted_at": "ISO8601"
   }

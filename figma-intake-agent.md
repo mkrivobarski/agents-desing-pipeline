@@ -137,7 +137,7 @@ Write `requirements.json` conforming to `schemas/requirements.schema.json`. Map 
 - `component_name`: verbatim from Figma
 - `category`: classify as `"atom"` if single-element (Button, Icon, Badge, Input), `"molecule"` if composite (Card, List Item, Form Row), `"organism"` if page-level (Nav, Header, Data Table)
 - `source`: `"library"`
-- `screens_used_in`: `[]` (populated by component-resolver)
+- `screens_used_in`: `[]` (populated by component-architect)
 
 ## Validation Rules
 
