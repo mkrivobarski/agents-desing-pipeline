@@ -14,6 +14,49 @@ If `pipeline.config.json` does not exist, create a minimal one by asking the use
 
 **Working directory containment**: Confirm that `working_dir` in the config resolves to a real path. All subsequent file operations in this run are scoped to that directory. Log the resolved working directory path in your response — never write outside it.
 
+## Step 1b: Session Recovery Check
+
+Before running elicitation, check whether `pipeline-progress.json` exists in the working directory.
+
+If it exists and `run_id` matches `pipeline.config.json`'s `run_id`:
+- Read `stages` to identify which stages are `"done"` and which is the first incomplete stage
+- Log: `{ resumed: true, last_completed_stage: "<stage>", resuming_from: "<stage>" }`
+- Skip all stages already marked `"done"` in the `stages` map — do not re-run elicitation or regenerate artifacts for completed stages
+- Set `recovery_mode: true` in `pipeline-intake.json`
+- Proceed directly to Step 4 to write updated `pipeline-intake.json` reflecting the recovery state
+
+If `pipeline-progress.json` does not exist or `run_id` does not match, proceed with normal elicitation (Step 2 onward) and write a fresh `pipeline-progress.json` at Step 4.
+
+**Write `pipeline-progress.json`** at the end of Step 4 (or resume it in recovery mode):
+
+```json
+{
+  "run_id": "string",
+  "working_dir": "string",
+  "mode": "new|batch|listen",
+  "created_at": "ISO8601",
+  "updated_at": "ISO8601",
+  "stages": {
+    "requirements-analyst":    "pending|in_progress|done",
+    "flow-architect":          "pending|in_progress|done",
+    "journey-mapper":          "pending|in_progress|done",
+    "wireframe-strategist":    "pending|in_progress|done",
+    "lo-fi-builder":           "pending|in_progress|done",
+    "token-system-builder":    "pending|in_progress|done",
+    "component-architect":     "pending|in_progress|done",
+    "component-builder":       "pending|in_progress|done",
+    "organism-composer":       "pending|skipped|in_progress|done",
+    "figma-instruction-writer":"pending|in_progress|done",
+    "design-validator":        "pending|in_progress|done|failed"
+  }
+}
+```
+
+Each downstream agent is responsible for updating its own stage status in `pipeline-progress.json`:
+- **On start**: set `stages.<agent_name> = "in_progress"`, update `updated_at`
+- **On completion**: set `stages.<agent_name> = "done"`, update `updated_at`
+- **On session recovery**: if stage is already `"done"`, skip all work and return immediately
+
 ## Step 2: Determine Elicitation Mode
 
 Select the elicitation mode based on `elicitation_mode` in the config:
