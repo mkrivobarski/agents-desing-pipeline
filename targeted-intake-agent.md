@@ -13,6 +13,47 @@ Read from the pipeline working directory:
 - `token-map.json` — existing token registry (if available from a prior run)
 - `component-manifest.json` — existing component registry (if available)
 - `pipeline.config.json` — working directory and run metadata
+- `pipeline-progress.json` — existing progress file (if present — session recovery)
+
+## Session Recovery
+
+Before starting Phase 1, check whether `pipeline-progress.json` exists in the working directory.
+
+If it exists and `run_id` matches `pipeline.config.json`'s `run_id`:
+- Read `completed_targets[]` from the progress file
+- Skip any target whose `node_id` appears in `completed_targets[]` with `status: "done"` or `status: "validated"`
+- Resume from the first target not yet completed
+- Log: `{ resumed: true, skipped_count: N, reason: "session-recovery" }`
+
+If `pipeline-progress.json` does not exist, or `run_id` does not match, start fresh and create a new one.
+
+**Write `pipeline-progress.json`** at the start of every run (or resume):
+
+```json
+{
+  "run_id": "string",
+  "working_dir": "string",
+  "created_at": "ISO8601",
+  "updated_at": "ISO8601",
+  "total_targets": 0,
+  "completed_targets": [],
+  "in_progress_target": null,
+  "stages": {
+    "targeted-intake-agent":    "pending|in_progress|done",
+    "token-system-builder":     "pending|skipped|in_progress|done",
+    "component-architect":      "pending|skipped|in_progress|done",
+    "component-builder":        "pending|skipped|in_progress|done",
+    "organism-composer":        "pending|skipped|in_progress|done",
+    "figma-instruction-writer": "pending|in_progress|done",
+    "design-validator":         "pending|in_progress|done|failed"
+  }
+}
+```
+
+Update `pipeline-progress.json` at each phase transition:
+- **Phase 1 start**: set `stages.targeted-intake-agent = "in_progress"`, set `in_progress_target = node_id`
+- **Phase 4 complete**: set `stages.targeted-intake-agent = "done"`, push `{ node_id, status: "intake_done" }` to `completed_targets[]`
+- Each downstream agent writes its own stage status when it starts and finishes.
 
 ## Your Responsibilities
 
@@ -91,6 +132,8 @@ For each target, set `agents_required` based on `scope` and `changes`:
 
 Set `patch_mode: true` for token-system-builder, component-architect, and organism-composer when they appear — these agents must read existing outputs and apply targeted changes only.
 
+**organism-composer skip rule:** Only include `organism-composer` in `agents_required` when `inferred_changes[]` contains at least one of: `layout`, `component_swap`, `structure`, `add_zone`, `remove_zone`. For changes involving only `fills`, `typography`, `padding`, `spacing`, `icon_swap`, `content`, or `variants`, set `"organism-composer"` in `skip_agents[]` — it has no work to do and invoking it wastes a full agent turn.
+
 ### Phase 4 — Write outputs
 
 **`target-snapshot.json`**:
@@ -106,6 +149,20 @@ Set `patch_mode: true` for token-system-builder, component-architect, and organi
       "scope": "frame|component|instance|element",
       "before_screenshot_url": "string or null",
       "properties": { },
+      "before_snapshot": {
+        "fills": [],
+        "strokes": [],
+        "cornerRadius": null,
+        "opacity": 1,
+        "padding": {},
+        "itemSpacing": null,
+        "layoutMode": null,
+        "width": 0,
+        "height": 0,
+        "fontSize": null,
+        "variantProperties": {},
+        "componentProperties": {}
+      },
       "instruction": "string",
       "intent": "iterate|redesign|fix|review",
       "constraints": "string or null",
@@ -144,7 +201,14 @@ Set `patch_mode: true` for token-system-builder, component-architect, and organi
       "targets": ["123:456"]
     }
   ],
-  "skipped_stages": ["requirements-analyst", "flow-architect", "wireframe-strategist", "journey-mapper", "lo-fi-builder", "creative-director", "token-system-builder"]
+  "skipped_stages": ["requirements-analyst", "flow-architect", "wireframe-strategist", "journey-mapper", "lo-fi-builder", "creative-director", "token-system-builder"],
+  "skip_agents": ["organism-composer"],
+  "rollback": {
+    "enabled": true,
+    "trigger": "design-validator returns overall_result: failed",
+    "rollback_script_file": "figma-scripts/patches/rollback__[node_id_sanitized].js",
+    "note": "figma-instruction-writer generates the rollback script from before_snapshot values in target-snapshot.json. design-validator executes it on FAIL."
+  }
 }
 ```
 

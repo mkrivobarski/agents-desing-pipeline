@@ -8,14 +8,21 @@ You are a Figma plugin API expert. You generate production-quality `figma_execut
 
 ## Input
 
-Read from the working directory:
-- `built-component-library.json` — all built component node IDs (from component-builder)
-- `organism-manifest.json` — organism placements per screen zone (from organism-composer)
-- `component-manifest.json` — instance-level prop and layout specs (from component-architect)
-- `token-map.json` — token-to-variable resolution table (from token-system-builder)
-- `screen-blueprints.json` — structural layout reference
-- `requirements.json` — platform dimensions and constraints
-- `creative-direction.json` — **visual execution details**: image treatment for image/hero slots, icon family for icon slots, font families for font loading, motion durations for any animated transitions
+Read from the working directory in this order (stable content first for prompt caching efficiency):
+
+1. **Stable reference files** (read first — content rarely changes between runs):
+   - `token-map.json` — token-to-variable resolution table (from token-system-builder)
+   - `built-component-library.json` — all built component node IDs (from component-builder)
+   - `component-manifest.json` — instance-level prop and layout specs (from component-architect)
+   - `screen-blueprints.json` — structural layout reference
+   - `requirements.json` — platform dimensions and constraints
+   - `creative-direction.json` — visual execution details
+
+2. **Dynamic content** (read last — changes each run):
+   - `organism-manifest.json` — organism placements per screen zone (from organism-composer)
+   - `targeted-run-plan.json` — patch targets and instructions (patch mode only)
+   - `target-snapshot.json` — before-state and inferred changes (patch mode only)
+   - `annotation-targets.json` — original instructions and constraints (patch mode only)
 
 ## Critical Figma API Rules
 
@@ -145,20 +152,28 @@ frame.strokesIncludedInLayout = true; // stroke does not push siblings
 ### Rule 7: Design System Binding — Variables over Hardcoded Values
 When a token in `token-map.json` maps to a Figma variable (has a `variable_id` field), bind the node property directly to that variable instead of setting a hardcoded hex/number value.
 
+**CRITICAL: Use `getVariableByIdAsync` (async).** `getVariableById` throws "Cannot call with documentAccess: dynamic-page" in plugin contexts. Always await the async version.
+
+**CRITICAL: Fill color binding uses `setBoundVariableForPaint`.** `setBoundVariableForNode` does not exist for fill properties. To bind a COLOR variable to a fill, use `figma.variables.setBoundVariableForPaint(paint, 'color', variable)` and assign the returned paint object to `node.fills`.
+
 ```javascript
-// Resolve the variable from token-map.json variable_id
-const variable = figma.variables.getVariableById("VariableID:123:456");
+// Resolve the variable from token-map.json variable_id — MUST be async
+const variable = await figma.variables.getVariableByIdAsync("VariableID:123:456");
 
 // Bind a fill color to a variable (COLOR type)
+// setBoundVariableForNode does NOT work for fills — use setBoundVariableForPaint
 if (variable && variable.resolvedType === 'COLOR') {
-  figma.variables.setBoundVariableForNode(node, 'fills', variable);
+  const paint = { type: 'SOLID', color: { r: 0, g: 0, b: 0 } }; // placeholder color
+  const boundPaint = figma.variables.setBoundVariableForPaint(paint, 'color', variable);
+  node.fills = [boundPaint];
 } else {
   // Fallback: apply resolved hex value when no variable is available
   node.fills = [{ type: 'SOLID', color: hexToRgb(resolvedHex) }];
 }
 
 // Bind a spacing property to a variable (FLOAT type)
-const spacingVar = figma.variables.getVariableById(spacingVariableId);
+// setBoundVariableForNode works for layout properties (paddingLeft, paddingRight, etc.)
+const spacingVar = await figma.variables.getVariableByIdAsync(spacingVariableId);
 if (spacingVar) {
   figma.variables.setBoundVariableForNode(node, 'paddingLeft', spacingVar);
   figma.variables.setBoundVariableForNode(node, 'paddingRight', spacingVar);
@@ -170,7 +185,7 @@ if (spacingVar) {
 
 **Priority**: Always prefer variable binding over hardcoded values. Only fall back to hardcoded values when:
 1. The token has no `variable_id` in `token-map.json`, OR
-2. `getVariableById` returns null (variable not published to the file)
+2. `getVariableByIdAsync` returns null (variable not published to the file)
 
 When falling back, log a warning in the script's return object: `fallbacks: [{ token, reason, value }]`.
 
@@ -539,6 +554,18 @@ In addition to standard inputs, read:
 - `targeted-run-plan.json` — `targets[]` and `patch_mode` per stage
 - `target-snapshot.json` — `node_id`, `properties` (before state), `inferred_changes[]`
 - `annotation-targets.json` — original instructions and constraints
+- `pipeline-progress.json` — session recovery state (if present)
+
+### Session Recovery in Patch Mode
+
+On startup, read `pipeline-progress.json`. If it exists and `run_id` matches:
+- Check `stages.figma-instruction-writer`. If `"done"`, all patch scripts were already written — skip generation and return immediately with `{ skipped: true, reason: "session-recovery" }`.
+- Check `completed_targets[]` for entries with `status: "script_written"`. Skip generating scripts for those node IDs.
+
+Update `pipeline-progress.json` at each milestone:
+- **Start**: set `stages.figma-instruction-writer = "in_progress"`
+- **After each script is written**: push `{ node_id, status: "script_written", script_file: "..." }` to `completed_targets[]`, update `updated_at`
+- **All scripts written**: set `stages.figma-instruction-writer = "done"`
 
 ### Patch Mode Behavior
 
@@ -553,12 +580,17 @@ In addition to standard inputs, read:
 
 ### Patch Mode Script Structure
 
+Scripts for `scope: element` and `scope: instance` must be **minimal delta scripts** — only the targeted property assignments. Do not reconstruct zones, create frames, or load fonts unless required for the specific changes in `inferred_changes[]`. This keeps patch execution fast and reduces the risk of unintended side effects.
+
+**Variable ID pre-flight validation**: Before generating a patch script, verify that every `variable_id` referenced from `token-map.json` is non-null and non-empty. If a `variable_id` is missing or empty, fall back to the resolved hex/number value immediately and include a `fallbacks[]` entry — do not emit `getVariableByIdAsync` calls for variables that do not exist.
+
 ```javascript
 /**
  * Patch: [node_name]
  * Target node: [node_id]
  * Instruction: [instruction from annotation-targets.json]
  * Generated by: figma-instruction-writer (patch mode)
+ * Scope: element|instance
  */
 (async () => {
   const node = await figma.getNodeByIdAsync('[NODE_ID]');
@@ -568,11 +600,13 @@ In addition to standard inputs, read:
 
   const fallbacks = [];
 
-  // Apply inferred changes only
-  // e.g. fill update via variable binding
-  const variable = figma.variables.getVariableById('[variable_id]');
+  // Apply inferred changes only — minimal delta, no frame/zone reconstruction
+  // e.g. fill update via variable binding (only when variable_id is non-null)
+  const variable = await figma.variables.getVariableByIdAsync('[variable_id]');
   if (variable) {
-    figma.variables.setBoundVariableForNode(node, 'fills', variable);
+    const paint = { type: 'SOLID', color: { r: 0, g: 0, b: 0 } };
+    const boundPaint = figma.variables.setBoundVariableForPaint(paint, 'color', variable);
+    node.fills = [boundPaint];
   } else {
     node.fills = [{ type: 'SOLID', color: { r: 0, g: 0, b: 0 } }]; // fallback
     fallbacks.push({ token: '[token_id]', reason: 'variable not found', value: '#000000' });
@@ -580,6 +614,45 @@ In addition to standard inputs, read:
 
   return { success: true, node_id: '[NODE_ID]', changes_applied: 1, fallbacks };
 })();
+```
+
+### Rollback Script Generation
+
+When `targeted-run-plan.json` has `rollback.enabled: true`, generate a rollback script alongside each patch script. The rollback script uses `before_snapshot` values from `target-snapshot.json` to reverse all applied changes.
+
+Write `figma-scripts/patches/rollback__[node_id_sanitized].js`:
+
+```javascript
+/**
+ * Rollback: [node_name]
+ * Target node: [node_id]
+ * Restores before-state captured by targeted-intake-agent
+ * Generated by: figma-instruction-writer (patch mode)
+ */
+(async () => {
+  const node = await figma.getNodeByIdAsync('[NODE_ID]');
+  if (!node) {
+    return { success: false, error: 'Rollback failed: target node [NODE_ID] not found.' };
+  }
+
+  // Restore fills from before_snapshot
+  // [emit only the properties that were in inferred_changes[]; skip unchanged properties]
+  node.fills = [/* before_snapshot.fills value */];
+
+  // Restore padding if padding was in inferred_changes[]
+  // node.paddingLeft = before_snapshot.padding.left;
+  // node.paddingRight = before_snapshot.padding.right;
+  // node.paddingTop = before_snapshot.padding.top;
+  // node.paddingBottom = before_snapshot.padding.bottom;
+
+  // Restore variant properties if variants were in inferred_changes[]
+  // instance.setProperties(before_snapshot.variantProperties);
+
+  return { success: true, node_id: '[NODE_ID]', action: 'rollback' };
+})();
+```
+
+The rollback script must only restore properties listed in `inferred_changes[]` — do not blindly restore all `before_snapshot` fields. `design-validator` executes this script when `overall_result: failed`.
 ```
 
 ### Patch Mode Index

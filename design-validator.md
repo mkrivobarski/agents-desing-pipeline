@@ -247,10 +247,49 @@ Also write a human-readable summary to `validation-reports/[screen_id]__[state]_
 - `cosmetic` — Trivial difference; optional fix
 
 ## Parity Score Calculation
+
+The single aggregate score is supplemented by **per-category gates**. All gates must pass for `overall_result: PASS`. A failing gate with non-blocking severity produces `WARN`; a blocking severity produces `FAIL`.
+
 ```
 parity_score = (pass_count + warn_count * 0.5) / total_checks
 ```
-A score of ≥ 0.95 is required to pass. A score of ≥ 0.85 generates a WARN. Below 0.85 generates FAIL.
+
+### Per-Category Gates
+
+| Category | Gate | On Failure |
+|---|---|---|
+| `structure` | All required zones present (binary pass/fail) | FAIL — short-circuit; skip remaining categories |
+| `instance` | ≥ 0.95 | FAIL |
+| `color` | ≥ 0.95 (WCAG is non-negotiable) | FAIL |
+| `spacing` | ≥ 0.90 | WARN |
+| `typography` | ≥ 0.90 | WARN |
+| `component` | ≥ 0.95 | FAIL |
+| `state` | ≥ 0.90 | WARN |
+| `accessibility` | ≥ 0.90 | WARN |
+
+**Short-circuit rule:** If `structure` fails, stop validation immediately and return `overall_result: FAIL` with `short_circuit: true`. Do not run remaining category checks — they are meaningless without a valid structure.
+
+### Overall Result Mapping
+
+| Condition | overall_result | sharedPluginData status |
+|---|---|---|
+| All gates pass | PASS | `done` |
+| Any gate WARN, no gate FAIL | WARN | `done-with-warnings` |
+| Any gate FAIL | FAIL | `failed` |
+
+Add `category_gates` to the report meta:
+```json
+"category_gates": {
+  "structure": { "result": "PASS|FAIL", "gate": "binary" },
+  "instance":  { "result": "PASS|FAIL|WARN", "gate": 0.95, "score": 0.0 },
+  "color":     { "result": "PASS|FAIL|WARN", "gate": 0.95, "score": 0.0 },
+  "spacing":   { "result": "PASS|FAIL|WARN", "gate": 0.90, "score": 0.0 },
+  "typography":{ "result": "PASS|FAIL|WARN", "gate": 0.90, "score": 0.0 },
+  "component": { "result": "PASS|FAIL|WARN", "gate": 0.95, "score": 0.0 },
+  "state":     { "result": "PASS|FAIL|WARN", "gate": 0.90, "score": 0.0 },
+  "accessibility":{ "result": "PASS|FAIL|WARN", "gate": 0.90, "score": 0.0 }
+}
+```
 
 ## Correction Loop Behavior
 If `overall_result` is FAIL:
@@ -260,10 +299,11 @@ If `overall_result` is FAIL:
 4. Maximum 3 correction loops before escalating to human review
 5. If the blocking issue is a wrong `mainComponentId` (instance points to wrong component), the fix action is `rerun_component_builder` — a script correction cannot fix a fundamentally wrong instantiation
 
-If `overall_result` is WARN:
-1. Write the validation report
+If `overall_result` is WARN (`done-with-warnings`):
+1. Write the validation report with `category_gates` populated
 2. Flag non-blocking issues but do not block pipeline progression
 3. Add all WARN items to the delivery package as known deviations
+4. Write `sharedPluginData` status as `done-with-warnings` with a `warnings[]` array summarising failing gates
 
 ## Patch Mode
 
@@ -275,6 +315,21 @@ In addition to standard inputs, read:
 - `targeted-run-plan.json` — `targets[]` in scope
 - `target-snapshot.json` — `before_screenshot_url`, `properties` (before state), `inferred_changes[]`
 - `figma-scripts/patches/` — the patch scripts that were executed (to understand what was changed)
+- `pipeline-progress.json` — session recovery state (if present)
+
+### Session Recovery in Patch Mode
+
+On startup, read `pipeline-progress.json`. If it exists and `run_id` matches:
+- Check `completed_targets[]` for entries with `status: "validated"`. Skip re-validating those node IDs — their reports are already written.
+- If `stages.design-validator = "done"`, all targets were already validated. Return immediately with `{ skipped: true, reason: "session-recovery" }`.
+- Resume validation from the first target not in `completed_targets[]`.
+
+Update `pipeline-progress.json` at each milestone:
+- **Start**: set `stages.design-validator = "in_progress"`
+- **After each node validated**: push `{ node_id, status: "validated", result: "PASS|FAIL|WARN", report_file: "..." }` to `completed_targets[]`, update `updated_at`
+- **All nodes validated**: set `stages.design-validator = "done"` (or `"failed"` if any blocking issues remain unresolved)
+
+**On rollback**: If `overall_result: failed` triggers rollback execution, set the target's `completed_targets` entry to `status: "rolled_back"` after the rollback script runs. Do not mark as `"validated"` — this target must be re-run.
 
 ### Patch Mode Behavior
 

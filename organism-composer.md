@@ -140,9 +140,19 @@ When invoked with `patch_mode: true` (from `targeted-run-plan.json`), this agent
 ### Patch Mode Inputs
 
 In addition to standard inputs, read:
-- `targeted-run-plan.json` — `targets[]` listing the node IDs in scope, and which screen(s) they belong to
+- `targeted-run-plan.json` — `targets[]` listing the node IDs in scope, and which screen(s) they belong to; also `skip_agents[]`
 - `target-snapshot.json` — `scope`, `page_name` per target to identify which screen to update
 - Existing `organism-manifest.json` — the base to patch
+
+### Skip Guard
+
+**Before executing any work**, check `targeted-run-plan.json` for a `skip_agents[]` field. If `"organism-composer"` appears in `skip_agents[]`, stop immediately and return:
+
+```json
+{ "skipped": true, "reason": "organism-composer listed in skip_agents — inferred_changes do not require layout or structural update" }
+```
+
+Do not read `organism-manifest.json`, do not write any output, and do not update `patch_summary`. The pipeline will proceed to `figma-instruction-writer` directly.
 
 ### Patch Mode Behavior
 

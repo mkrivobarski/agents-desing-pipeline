@@ -36,7 +36,7 @@ Use CronCreate:
 Design pipeline listen tick. Working directory: <working_dir>. Do the following silently.
 
 1. Call figma_execute to scan for pending items:
-(async () => {
+const result = await (async () => {
   await figma.loadAllPagesAsync();
   const items = [];
   for (const page of figma.root.children) {
@@ -50,13 +50,14 @@ Design pipeline listen tick. Working directory: <working_dir>. Do the following 
     }
   }
   return { items, total: items.length };
-})()
+})();
+return result;
 
 2. If total === 0, stop — nothing to do.
 
 3. For each pending item:
    a. Mark processing via figma_execute (substitute NODE_ID):
-   (async () => {
+   const r = await (async () => {
      const node = await figma.getNodeByIdAsync('NODE_ID');
      if (!node) return { error: 'not found' };
      const raw = node.getSharedPluginData('pipeline', 'instruction');
@@ -65,7 +66,8 @@ Design pipeline listen tick. Working directory: <working_dir>. Do the following 
      entry.processedAt = Date.now();
      node.setSharedPluginData('pipeline', 'instruction', JSON.stringify(entry));
      return { ok: true };
-   })()
+   })();
+   return r;
 
    b. Write a single-entry annotation-targets.json to <working_dir>. Infer scope: FRAME/SECTION→frame, COMPONENT/COMPONENT_SET→component, INSTANCE→instance, else→element.
 

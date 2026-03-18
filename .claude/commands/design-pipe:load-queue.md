@@ -26,7 +26,7 @@ Write `pipeline.config.json`:
 
 Call `figma_execute`:
 ```javascript
-(async () => {
+const result = await (async () => {
   await figma.loadAllPagesAsync();
   const items = [];
   for (const page of figma.root.children) {
@@ -43,7 +43,8 @@ Call `figma_execute`:
     }
   }
   return { items, total: items.length };
-})()
+})();
+return result;
 ```
 
 If `total === 0`, output: `No pending instructions found in the Figma file.` and stop.
@@ -64,7 +65,7 @@ Found N pending instruction(s):
 
 For each item, call `figma_execute` to set `status: 'processing'` (substitute NODE_ID and RUN_ID):
 ```javascript
-(async () => {
+const r = await (async () => {
   const node = await figma.getNodeByIdAsync('NODE_ID');
   if (!node) return { error: 'not found' };
   const raw = node.getSharedPluginData('pipeline', 'instruction');
@@ -74,7 +75,8 @@ For each item, call `figma_execute` to set `status: 'processing'` (substitute NO
   entry.runId = 'RUN_ID';
   node.setSharedPluginData('pipeline', 'instruction', JSON.stringify(entry));
   return { ok: true };
-})()
+})();
+return r;
 ```
 
 ### Step 5 — Write annotation-targets.json
