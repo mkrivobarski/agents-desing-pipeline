@@ -30,6 +30,26 @@ Read from the working directory:
 2. `token-map.json` — token registry with variable IDs and slot token assignments (from token-system-builder)
 3. `requirements.json` — platform target (for adapter selection and page name)
 4. `pipeline.config.json` — contains `adapter`, `figma_page`, `canvas_origin`, `screen_gap` overrides if present
+5. `icon-library.json` *(optional)* — icon name → Figma nodeId map (from icon-library-builder); enables real INSTANCE_SWAP bindings for icon slots
+
+## Step 0 — Build iconMap (optional)
+
+Before calling any MCP tools, check whether `icon-library.json` exists in the working directory.
+
+- **If present**: parse it and extract `icons` (a `{ [iconName]: nodeId }` map). Store as `iconMap`.
+- **If absent**: set `iconMap = {}`. Log a note in `figma-scripts/index.json` warnings that icon slots will remain unbound.
+
+```json
+// icon-library.json shape (produced by icon-library-builder)
+{
+  "icons": {
+    "heroicons:home": "123:456",
+    "heroicons:magnifying-glass": "123:457"
+  }
+}
+```
+
+The `iconMap` is passed to `compile_scene` as `icon_map` in Step 2.
 
 ## Step 1 — manifest_to_scene
 
@@ -68,7 +88,8 @@ compile_scene({
   scene:          <scene from manifest_to_scene>,
   adapter:        <same adapter as step 1>,
   variable_map:   <variable_map from manifest_to_scene>,
-  component_map:  <component_map from manifest_to_scene>
+  component_map:  <component_map from manifest_to_scene>,
+  icon_map:       <iconMap from Step 0 (empty object {} if icon-library.json absent)>
 })
 ```
 
@@ -136,6 +157,8 @@ Write `figma-scripts/index.json` summarising the run:
   "token_count": <number>,
   "variable_bindings": <number from compilation.stats.boundVariables>,
   "instruction_count": <number>,
+  "icon_slots_resolved": <number of icon slots bound (0 if icon-library.json absent)>,
+  "icon_slots_unbound": <list of icon names that had no matching nodeId, or []>,
   "unmapped_organism_types": [],
   "warnings": [],
   "figma_page": "<page name>",
@@ -168,11 +191,12 @@ When the figma-instruction-writer stage in `targeted-run-plan.json` has `use_pat
 2. Read `figma-scripts/patch-scene-diff.json` — the structural diff (added/removed/modified screens and nodes)
 3. Build `variable_map` from `token-map.json` token_registry (token_id dot-format → variable_id)
 4. Build `component_map` from `organism-manifest.json` (organism_name → default_variant_node_id)
-5. For each **modified or added** screen/node in the diff:
-   - Call `compile_scene` with the patch-scene and maps, `screen_gap` and `canvas_origin` from pipeline.config.json
+5. Build `iconMap` from `icon-library.json` if present (same as Step 0 in full run); default to `{}`
+6. For each **modified or added** screen/node in the diff:
+   - Call `compile_scene` with the patch-scene and maps, `screen_gap` and `canvas_origin` from pipeline.config.json, and `icon_map: iconMap`
    - Call `execute_instructions` with `page_name` from pipeline.config.json
    - Call `figma_execute` with the returned JS code
-6. Write patch results to `figma-scripts/patches/index.json`
+7. Write patch results to `figma-scripts/patches/index.json`
 
 This path skips `manifest_to_scene` entirely — the scene is already prepared.
 
@@ -181,9 +205,10 @@ This path skips `manifest_to_scene` entirely — the scene is already prepared.
 Patch mode does NOT call `manifest_to_scene`. Instead, for each target in `targeted-run-plan.json`:
 
 1. Build a minimal single-node Scene containing only the targeted organism at its current placement
-2. Call `compile_scene` with that minimal scene and the current `variable_map` and `component_map`
-3. Call `execute_instructions` with `page_name` set to the screen's current Figma page
-4. Pass the resulting `js_code` to `figma_execute`
+2. Build `iconMap` from `icon-library.json` if present (same as Step 0 in full run); default to `{}`
+3. Call `compile_scene` with that minimal scene, the current `variable_map` and `component_map`, and `icon_map: iconMap`
+4. Call `execute_instructions` with `page_name` set to the screen's current Figma page
+5. Pass the resulting `js_code` to `figma_execute`
 
 **Escalate** if `figma_execute` returns a node-not-found error — do not recreate nodes.
 

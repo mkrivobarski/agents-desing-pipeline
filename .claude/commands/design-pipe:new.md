@@ -85,8 +85,9 @@ Agent specs: /Users/I750626/AI/agents/design-pipeline/
 8.  component-builder
 9.  organism-composer
 10. copy-writer
-11. figma-instruction-writer
-12. design-validator
+11. icon-mapper
+12. figma-instruction-writer
+13. design-validator
 
 Write all artifacts to <working_dir>.
 ```
