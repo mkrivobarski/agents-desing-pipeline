@@ -169,9 +169,10 @@ For each entry in `component-build-plan.json` `build_order`:
    - For molecules/organisms: instantiate child atoms/molecules by node ID
 5. Append all variant components to the correct tier section
 6. Call `figma.combineAsVariants(variants, section)` → read back IDs
-7. Set component description: `componentSet.description = spec.description`
-8. Add component properties from `spec.props`
-9. Record post-combine IDs in the running `library` object
+7. Call `positionInSection(componentSet, tierName)` immediately after step 6 — before building the next component
+8. Set component description: `componentSet.description = spec.description`
+9. Add component properties from `spec.props`
+10. Record post-combine IDs in the running `library` object
 
 ### 3. State-Specific Token Binding
 
@@ -189,12 +190,37 @@ If the interpolated token does not exist in `token-map.json`, fall back to the `
 
 ### 4. Canvas Layout
 
-Position sections in the Component Library page:
-- Atoms section: `x: 0, y: 0`
-- Molecules section: `x: 0, y: atoms_section_height + 120`
-- Organisms section: `x: 0, y: molecules_section_bottom + 120`
+Position each component set explicitly within its section immediately after `combineAsVariants`. Track the running x-cursor per section and reset it for each new section.
 
-Within each section, position component sets in a horizontal flow with 40px gaps.
+```javascript
+// Positioning pattern — run per section after all sets in that tier are built
+// Maintain a cursor per section:
+const cursors = { atoms: 0, molecules: 0, organisms: 0 };
+
+// After combineAsVariants returns `componentSet`, position it:
+function positionInSection(componentSet, sectionName) {
+  const cursor = cursors[sectionName];
+  componentSet.x = cursor;
+  componentSet.y = 0;
+  cursors[sectionName] = cursor + componentSet.width + 80; // 80px gap between sets
+}
+```
+
+Position the three sections vertically on the page after all tiers are built, using each section's actual bounds:
+
+```javascript
+// After all three tiers are fully built:
+atomsSection.x = 0;
+atomsSection.y = 0;
+
+moleculesSection.x = 0;
+moleculesSection.y = atomsSection.y + atomsSection.height + 120;
+
+organismsSection.x = 0;
+organismsSection.y = moleculesSection.y + moleculesSection.height + 120;
+```
+
+This ensures sections never overlap regardless of the number of components built. Always position component sets before declaring a tier section complete.
 
 ## Output Format
 
