@@ -1,3 +1,14 @@
+# Design Pipeline — Agent Reference
+
+This folder contains the AI agent instructions that drive every stage of the pipeline.
+You don't run these directly — they're invoked automatically when you use the slash commands
+in Claude Code (`/design-pipe:new`, `/design-pipe:review`, etc.).
+
+**This document is a reference for understanding what runs under the hood.**
+For setup and usage instructions, see the [main README](../README.md).
+
+---
+
 # Design Pipeline — Claude Code Agent System
 
 A multi-agent pipeline that transforms **Figma files, design briefs, or PRDs** into
@@ -155,7 +166,10 @@ The pipeline runs in two modes:
 | `organism-composer` | `built-component-library.json`, `component-manifest.json`, `screen-blueprints.json` | `organism-manifest.json` | Placement manifest only; no Figma calls; no `parentId` |
 | `copy-writer` | `organism-manifest.json`, `requirements.json`, `creative-direction.json`, `screen-blueprints.json`, `component-manifest.json` | `copy-manifest.json` + updated `organism-manifest.json` | Fills placeholder TEXT prop_overrides with semantically appropriate copy; never modifies layout, variants, or specified copy |
 | `icon-mapper` | `organism-manifest.json`, `creative-direction.json`, `component-manifest.json`, `requirements.json`, `screen-blueprints.json` | `icon-manifest.json` + updated `organism-manifest.json` | Assigns semantically appropriate icon names to null INSTANCE_SWAP icon slots; never modifies layout, variants, text props, or specified icons |
-| `figma-instruction-writer` | `organism-manifest.json`, `built-component-library.json`, `component-manifest.json`, `token-map.json`, `creative-direction.json` | `figma-scripts/[screen_id].js` | Applies image treatment, icon sizes, and font loading from creative-direction |
+| `image-mapper` | `organism-manifest.json`, `creative-direction.json`, `component-manifest.json`, `requirements.json`, `screen-blueprints.json` | `image-manifest.json` + updated `organism-manifest.json` | Detects image slots via slot_type, prop name signals, data bindings, and organism name heuristics; assigns content categories and aspect ratios |
+| `icon-library-builder` | `icon-manifest.json`, `creative-direction.json`, `requirements.json` | `icon-library.json` | Locates or creates icon component nodes in Figma; writes icon name → nodeId map |
+| `image-library-builder` | `image-manifest.json`, `creative-direction.json`, `token-map.json` | `image-library.json` | Creates styled placeholder rectangles in Figma on Assets page; brand-tinted fills, diagonal-cross marker, label text; writes image name → nodeId map |
+| `figma-instruction-writer` | `organism-manifest.json`, `token-map.json`, `icon-library.json`, `image-library.json` | `figma-scripts/scene.json`, `figma-scripts/index.json` | Uses manifest_to_scene → compile_scene → execute_instructions → figma_execute; passes icon_map and image_map (when fill_images: true) |
 | `design-validator` | Screenshots, `built-component-library.json`, blueprints, `organism-manifest.json`, token-map | `validation-reports/[screen_id]__report.json` | Depth-6 extraction; instance validation category |
 
 ### Gate 4 Evaluation Stage
@@ -221,10 +235,11 @@ Each pipeline stage has a corresponding Ouroboros seed in `seeds/`:
 
 Run any seed with:
 ```
-mcp__plugin_ouroboros_ouroboros__ouroboros_execute_seed(
-  seed_content=<contents of seed file>
-)
+ooo run path/to/seed.yaml
 ```
+
+These seeds are used internally by the pipeline and by the Ouroboros workflow engine.
+If you're not using Ouroboros, you don't need to interact with them directly.
 
 ---
 
@@ -303,6 +318,9 @@ screen-blueprints.json ────┤
      organism-manifest.json  ← organism-composer
      copy-manifest.json      ← copy-writer (also updates organism-manifest.json prop_overrides)
      icon-manifest.json      ← icon-mapper (also updates organism-manifest.json prop_overrides)
+     image-manifest.json     ← image-mapper (also updates organism-manifest.json)
+     icon-library.json       ← icon-library-builder (icon name → Figma nodeId)
+     image-library.json      ← image-library-builder (image name → Figma nodeId, placeholder frames)
             │
             ▼
      figma-scripts/scene.json  ← figma-instruction-writer
@@ -372,9 +390,12 @@ screen-blueprints.json ────┤
 11. organism-composer        → organism-manifest.json
 12. copy-writer              → copy-manifest.json + organism-manifest.json (copy values)
 13. icon-mapper              → icon-manifest.json + organism-manifest.json (icon names)
-14. figma-instruction-writer → figma-scripts/
-14. [figma_execute each script]
-15. design-validator         → validation-reports/
+14. image-mapper             → image-manifest.json + organism-manifest.json (image slots)
+15. icon-library-builder     → icon-library.json (Figma icon component nodeIds)
+16. image-library-builder    → image-library.json (Figma placeholder frame nodeIds)
+17. figma-instruction-writer → figma-scripts/
+18. [figma_execute each script]
+19. design-validator         → validation-reports/
                                ── GATE 4: parity score ≥ 0.95 ──
 16. [parallel]
     ├── ux-evaluator         → ux-evaluation-report.json
