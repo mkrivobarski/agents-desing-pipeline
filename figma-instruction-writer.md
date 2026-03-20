@@ -1,6 +1,6 @@
 ---
 name: figma-instruction-writer
-description: "Converts organism-manifest.json + token-map.json into Figma designs using the semantic-figma MCP pipeline: manifest_to_scene → compile_scene → execute_instructions → figma_execute. Runs after organism-composer. Replaces direct JS script generation with a three-tool semantic compilation pass."
+description: "Converts organism-manifest.json + token-map.json into Figma designs using the semantic-figma MCP pipeline: manifest_to_scene → compile_scene → execute_instructions → figma_execute. Runs after image-library-builder. Replaces direct JS script generation with a three-tool semantic compilation pass."
 tools: [Read, Write, mcp__semantic-figma__manifest_to_scene, mcp__semantic-figma__compile_scene, mcp__semantic-figma__execute_instructions, mcp__figma-console__figma_execute, mcp__figma-console__figma_take_screenshot]
 ---
 
@@ -31,12 +31,14 @@ Read from the working directory:
 3. `requirements.json` — platform target (for adapter selection and page name)
 4. `pipeline.config.json` — contains `adapter`, `figma_page`, `canvas_origin`, `screen_gap` overrides if present
 5. `icon-library.json` *(optional)* — icon name → Figma nodeId map (from icon-library-builder); enables real INSTANCE_SWAP bindings for icon slots
+6. `image-library.json` *(optional)* — image name → Figma nodeId map (from image-library-builder); enables image slot coverage reporting
 
-## Step 0 — Build iconMap (optional)
+## Step 0 — Build iconMap and imageMap (optional)
 
-Before calling any MCP tools, check whether `icon-library.json` exists in the working directory.
+Before calling any MCP tools, check whether `icon-library.json` and `image-library.json` exist in the working directory.
 
-- **If present**: parse it and extract `icons` (a `{ [iconName]: nodeId }` map). Store as `iconMap`.
+**iconMap**:
+- **If present**: parse `icon-library.json` and extract `icons` (a `{ [iconName]: nodeId }` map). Store as `iconMap`.
 - **If absent**: set `iconMap = {}`. Log a note in `figma-scripts/index.json` warnings that icon slots will remain unbound.
 
 ```json
@@ -49,7 +51,26 @@ Before calling any MCP tools, check whether `icon-library.json` exists in the wo
 }
 ```
 
-The `iconMap` is passed to `compile_scene` as `icon_map` in Step 2.
+**imageMap**:
+- **If present**: parse `image-library.json` and extract `images` (a `{ [imageName]: { node_id, dimensions, aspect_ratio } }` map). Build a flat `{ [imageName]: node_id }` lookup. Store as `imageMap`.
+- **If absent**: set `imageMap = {}`. Log a note in `figma-scripts/index.json` warnings that image slots will not be reported.
+
+```json
+// icon-library.json shape (produced by icon-library-builder)
+{
+  "images": {
+    "product:card-placeholder": {
+      "node_id": "123:458",
+      "dimensions": { "width": 320, "height": 213 },
+      "aspect_ratio": "3:2",
+      "treatment": "clean",
+      "source": "placeholder"
+    }
+  }
+}
+```
+
+The `iconMap` is passed to `compile_scene` as `icon_map` in Step 2. The `imageMap` is also passed as `image_map` when `fill_images: true` in `pipeline.config.json`. In Phase A (placeholder mode), `imageMap` is used for coverage reporting only and `image_map` is omitted from `compile_scene`.
 
 ## Step 1 — manifest_to_scene
 
@@ -89,7 +110,8 @@ compile_scene({
   adapter:        <same adapter as step 1>,
   variable_map:   <variable_map from manifest_to_scene>,
   component_map:  <component_map from manifest_to_scene>,
-  icon_map:       <iconMap from Step 0 (empty object {} if icon-library.json absent)>
+  icon_map:       <iconMap from Step 0 (empty object {} if icon-library.json absent)>,
+  image_map:      <imageMap from Step 0 if fill_images: true in pipeline.config.json, otherwise omit>
 })
 ```
 
@@ -159,6 +181,8 @@ Write `figma-scripts/index.json` summarising the run:
   "instruction_count": <number>,
   "icon_slots_resolved": <number of icon slots bound (0 if icon-library.json absent)>,
   "icon_slots_unbound": <list of icon names that had no matching nodeId, or []>,
+  "image_map_loaded": <true if image-library.json was found, false otherwise>,
+  "image_slots_catalogued": <count of unique image names in imageMap, 0 if absent>,
   "unmapped_organism_types": [],
   "warnings": [],
   "figma_page": "<page name>",
@@ -192,8 +216,9 @@ When the figma-instruction-writer stage in `targeted-run-plan.json` has `use_pat
 3. Build `variable_map` from `token-map.json` token_registry (token_id dot-format → variable_id)
 4. Build `component_map` from `organism-manifest.json` (organism_name → default_variant_node_id)
 5. Build `iconMap` from `icon-library.json` if present (same as Step 0 in full run); default to `{}`
-6. For each **modified or added** screen/node in the diff:
-   - Call `compile_scene` with the patch-scene and maps, `screen_gap` and `canvas_origin` from pipeline.config.json, and `icon_map: iconMap`
+6. Build `imageMap` from `image-library.json` if present (same as Step 0 in full run); default to `{}`
+7. For each **modified or added** screen/node in the diff:
+   - Call `compile_scene` with the patch-scene and maps, `screen_gap` and `canvas_origin` from pipeline.config.json, `icon_map: iconMap`, and `image_map: imageMap` if `fill_images: true`
    - Call `execute_instructions` with `page_name` from pipeline.config.json
    - Call `figma_execute` with the returned JS code
 7. Write patch results to `figma-scripts/patches/index.json`
@@ -206,9 +231,10 @@ Patch mode does NOT call `manifest_to_scene`. Instead, for each target in `targe
 
 1. Build a minimal single-node Scene containing only the targeted organism at its current placement
 2. Build `iconMap` from `icon-library.json` if present (same as Step 0 in full run); default to `{}`
-3. Call `compile_scene` with that minimal scene, the current `variable_map` and `component_map`, and `icon_map: iconMap`
-4. Call `execute_instructions` with `page_name` set to the screen's current Figma page
-5. Pass the resulting `js_code` to `figma_execute`
+3. Build `imageMap` from `image-library.json` if present (same as Step 0 in full run); default to `{}`
+4. Call `compile_scene` with that minimal scene, the current `variable_map` and `component_map`, `icon_map: iconMap`, and `image_map: imageMap` if `fill_images: true`
+5. Call `execute_instructions` with `page_name` set to the screen's current Figma page
+6. Pass the resulting `js_code` to `figma_execute`
 
 **Escalate** if `figma_execute` returns a node-not-found error — do not recreate nodes.
 
