@@ -44,6 +44,7 @@ If `pipeline-progress.json` does not exist, or `run_id` does not match, start fr
     "component-architect":      "pending|skipped|in_progress|done",
     "component-builder":        "pending|skipped|in_progress|done",
     "organism-composer":        "pending|skipped|in_progress|done",
+    "copy-writer":              "pending|skipped|in_progress|done",
     "figma-instruction-writer": "pending|in_progress|done",
     "design-validator":         "pending|in_progress|done|failed"
   }
@@ -133,6 +134,8 @@ For each target, set `agents_required` based on `scope` and `changes`:
 Set `patch_mode: true` for token-system-builder, component-architect, and organism-composer when they appear — these agents must read existing outputs and apply targeted changes only.
 
 **organism-composer skip rule:** Only include `organism-composer` in `agents_required` when `inferred_changes[]` contains at least one of: `layout`, `component_swap`, `structure`, `add_zone`, `remove_zone`. For changes involving only `fills`, `typography`, `padding`, `spacing`, `icon_swap`, `content`, or `variants`, set `"organism-composer"` in `skip_agents[]` — it has no work to do and invoking it wastes a full agent turn.
+
+**copy-writer skip rule:** Only include `copy-writer` in `agents_required` when `inferred_changes[]` contains `content` or `rename`. For changes involving only `fills`, `typography`, `padding`, `spacing`, or `variants`, set `"copy-writer"` in `skip_agents[]`.
 
 ### Phase 3b — Scene Delta (non-structural patches only)
 

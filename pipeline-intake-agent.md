@@ -47,6 +47,7 @@ If `pipeline-progress.json` does not exist or `run_id` does not match, proceed w
     "component-architect":     "pending|in_progress|done",
     "component-builder":       "pending|in_progress|done",
     "organism-composer":       "pending|skipped|in_progress|done",
+    "copy-writer":             "pending|skipped|in_progress|done",
     "figma-instruction-writer":"pending|in_progress|done",
     "design-validator":        "pending|in_progress|done|failed"
   }

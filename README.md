@@ -148,6 +148,7 @@ The pipeline runs in two modes:
 | `component-architect` | `screen-blueprints.json`, `token-map.json`, `requirements.json`, `creative-direction.json` | `component-manifest.json`, `component-build-plan.json` | Uses creative-direction for density, radius, and icon sizing |
 | `component-builder` | `component-build-plan.json`, `token-map.json` | `built-component-library.json` + Figma COMPONENT nodes | Builds real Figma COMPONENT_SET nodes via `combineAsVariants` |
 | `organism-composer` | `built-component-library.json`, `component-manifest.json`, `screen-blueprints.json` | `organism-manifest.json` | Placement manifest only; no Figma calls; no `parentId` |
+| `copy-writer` | `organism-manifest.json`, `requirements.json`, `creative-direction.json`, `screen-blueprints.json`, `component-manifest.json` | `copy-manifest.json` + updated `organism-manifest.json` | Fills placeholder TEXT prop_overrides with semantically appropriate copy; never modifies layout, variants, or specified copy |
 | `figma-instruction-writer` | `organism-manifest.json`, `built-component-library.json`, `component-manifest.json`, `token-map.json`, `creative-direction.json` | `figma-scripts/[screen_id].js` | Applies image treatment, icon sizes, and font loading from creative-direction |
 | `design-validator` | Screenshots, `built-component-library.json`, blueprints, `organism-manifest.json`, token-map | `validation-reports/[screen_id]__report.json` | Depth-6 extraction; instance validation category |
 
@@ -279,6 +280,7 @@ screen-blueprints.json ────┤
             │
             ▼
      organism-manifest.json  ← organism-composer
+     copy-manifest.json      ← copy-writer (also updates organism-manifest.json prop_overrides)
             │
             ▼
      figma-scripts/scene.json  ← figma-instruction-writer
@@ -331,12 +333,13 @@ screen-blueprints.json ────┤
 8.  component-builder       → built-component-library.json + Figma COMPONENT nodes
                               ── GATE 3: verify first-screen screenshot ──
 9.  organism-composer       → organism-manifest.json
-10. figma-instruction-writer → figma-scripts/
-11. [figma_execute each script]
-12. design-validator        → validation-reports/
+10. copy-writer             → copy-manifest.json + organism-manifest.json (copy values)
+11. figma-instruction-writer → figma-scripts/
+12. [figma_execute each script]
+13. design-validator        → validation-reports/
                               ── GATE 4: parity score ≥ 0.95 ──
-13. prototype-linker        → Figma prototype links
-14. delivery-sequencer      → HANDOFF.md
+14. prototype-linker        → Figma prototype links
+15. delivery-sequencer      → HANDOFF.md
 ```
 
 ---
