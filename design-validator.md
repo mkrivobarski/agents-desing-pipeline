@@ -374,24 +374,36 @@ Update `pipeline-progress.json` at each milestone:
    - `variants` → run instance and component variant checks
    - `layout` → run structural and spacing checks
 6. **Reduced check set**: Skip structural zone presence checks, state completeness checks, and accessibility sweeps unless `intent: "redesign"` or `intent: "fix"` is set on the target.
-7. **Write-back status**: After validation completes, call `figma_execute` for each validated node to update its `sharedPluginData` status to `"done"` (or `"failed"` with an error if blocking issues remain).
+7. **Write-back status**: After validation completes, write back status via both `figma_execute` (sharedPluginData) and `PIPELINE_UPDATE_STATUS` message — see Patch Mode Status Write-Back below.
+8. **Rollback on FAIL**: If `overall_result: FAIL` for a target, execute its rollback script before writing back status:
+   - Read `targeted-run-plan.json` for `rollback.rollback_script_file` (e.g., `figma-scripts/patches/rollback__[node_id_sanitized].js`)
+   - If the rollback script file exists, read it and pass its contents to `figma_execute`
+   - After rollback executes successfully, set `entry.status = 'failed'` and add `entry.rolledBack = true` in the write-back
+   - Update `pipeline-progress.json`: set the target's `completed_targets` entry to `status: "rolled_back"`
+   - If the rollback script does not exist, write `entry.status = 'failed'` and log a warning that no rollback script was available
 
 ### Patch Mode Status Write-Back
 
-For each validated target, execute:
+For each validated target, write status back via `figma_execute`. Include a direct `_pipelineIndex` update in the same call so the plugin's in-memory index stays current without a postMessage round-trip:
 
 ```javascript
 const node = await figma.getNodeByIdAsync('NODE_ID');
 if (!node) return { error: 'not found' };
 const raw = node.getSharedPluginData('pipeline', 'instruction');
 const entry = raw ? JSON.parse(raw) : {};
-entry.status = 'done'; // or 'failed'
+entry.status = 'done'; // or 'failed', 'done-with-warnings'
 entry.processedAt = Date.now();
 entry.runId = 'RUN_ID';
-// if failed: entry.error = 'description of blocking issue';
+entry.validationSummary = 'PASS: N/N checks passed'; // or failure summary
+entry.parityScore = 1.0; // from parity_score
+// if failed: entry.error = 'description of blocking issue'; entry.rolledBack = true;
 node.setSharedPluginData('pipeline', 'instruction', JSON.stringify(entry));
+// Update the plugin's in-memory index directly (same sandbox — no postMessage needed)
+if (typeof _pipelineIndex !== 'undefined') _pipelineIndex['NODE_ID'] = entry;
 return { ok: true };
 ```
+
+Substitute `NODE_ID`, `RUN_ID`, the status string, `validationSummary`, and `parityScore` with actual values for each target. The `_pipelineIndex` update ensures the queue panel reflects the correct status immediately without requiring a manual Refresh.
 
 ### Patch Mode Output
 

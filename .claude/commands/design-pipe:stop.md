@@ -17,7 +17,12 @@ Cancel the active `/design-pipe:listen` polling loop.
 4. If a matching job ID is found, call CronDelete with that ID.
    If no stored ID but CronList shows a job whose prompt contains "design-pipe:listen" or "Design pipeline listen tick", cancel that one.
 
-5. Output:
+5. Call `figma_execute` to clear the listen indicator in the plugin (best-effort — skip if plugin not open):
+   ```javascript
+   figma.ui.postMessage({ type: 'PIPELINE_LISTEN_STATUS', data: { state: 'hidden' } });
+   ```
+
+6. Output:
    ```
    Pipeline listen mode stopped.
    ```
