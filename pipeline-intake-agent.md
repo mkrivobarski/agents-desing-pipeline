@@ -42,6 +42,7 @@ If `pipeline-progress.json` does not exist or `run_id` does not match, proceed w
     "journey-mapper":          "pending|in_progress|done",
     "wireframe-strategist":    "pending|in_progress|done",
     "lo-fi-builder":           "pending|in_progress|done",
+    "creative-director":       "pending|in_progress|done",
     "token-system-builder":    "pending|in_progress|done",
     "component-architect":     "pending|in_progress|done",
     "component-builder":       "pending|in_progress|done",
@@ -56,6 +57,12 @@ Each downstream agent is responsible for updating its own stage status in `pipel
 - **On start**: set `stages.<agent_name> = "in_progress"`, update `updated_at`
 - **On completion**: set `stages.<agent_name> = "done"`, update `updated_at`
 - **On session recovery**: if stage is already `"done"`, skip all work and return immediately
+
+## Step 1c: Adapter Inference
+
+After reading `pipeline.config.json`, ensure an `adapter` field is set. This selects the semantic-figma design system adapter used by `figma-instruction-writer` and downstream rendering tools.
+
+If `adapter` is already set in the config, use it as-is. If not, infer from the brief or set to `"fiori"` as the default. Valid values: `"fiori"`, `"mui"`, `"shadcn"`, `"apple-hig"`, `"ant-design"`, `"gluestack"`.
 
 ## Step 2: Determine Elicitation Mode
 
@@ -119,6 +126,7 @@ Gate A: Present inferred screen list and flows. Ask for corrections.
 - Typography (font family, or "use system defaults")
 - Spacing base unit (4px, 8px, or other)
 - Accessibility requirements (WCAG AA / AAA / none specified)
+- Design system / component library in use? Map the answer to an adapter: SAP Fiori → `"fiori"`, Material/MUI → `"mui"`, shadcn/Radix → `"shadcn"`, Apple HIG / iOS → `"apple-hig"`, Ant Design → `"ant-design"`, React Native / Gluestack → `"gluestack"`, none/custom → `"fiori"` (default)
 
 Gate B: Present full `requirements.json` summary. Ask "Ready to proceed with pipeline execution?"
 
@@ -145,6 +153,7 @@ Set `screens_to_run` to only the screens containing or nearest to the targeted n
 Write `pipeline.config.json` (updated with resolved values from elicitation):
 - Fill in `working_dir` as absolute path
 - Set `elicitation_mode` to the resolved mode
+- Set `adapter` to the resolved design system adapter (from Step 1c or elicitation; default `"fiori"`)
 - Set `access.figma_write_agents` to the default list unless overridden
 - If DELTA mode, add `prior_run_id` and `screens_to_run`
 
@@ -163,6 +172,7 @@ Write `pipeline-intake.json` as the run initialization record:
   "working_dir": "absolute path",
   "figma_url": "string or null",
   "prior_run_id": "string or null",
+  "adapter": "fiori|mui|shadcn|apple-hig|ant-design|gluestack",
   "screens_to_run": ["screen_id_1"] ,
   "all_screens": true,
   "gates_enabled": { "A": true, "B": true, "C": true },

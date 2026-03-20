@@ -231,10 +231,15 @@ mcp__plugin_ouroboros_ouroboros__ouroboros_execute_seed(
 | `figma_create_variable_collection` | token-system-builder |
 | `figma_batch_create_variables` | token-system-builder |
 | `figma_batch_update_variables` | token-system-builder |
-| `figma_execute` | lo-fi-builder (wireframes), component-builder (COMPONENT nodes), figma-instruction-writer (screens), prototype-linker (reactions), design-validator (ground truth extraction) |
-| `figma_take_screenshot` | prototype-linker (post-link validation) |
+| `figma_execute` | lo-fi-builder (wireframes), component-builder (COMPONENT nodes), figma-instruction-writer (screens via execute_instructions JS), prototype-linker (reactions), design-validator (ground truth extraction), targeted-intake-agent (snapshots) |
+| `figma_take_screenshot` | prototype-linker (post-link validation), figma-instruction-writer (post-render verification) |
 | `figma_get_comments` | design-validator (optional) |
 | `figma_post_comment` | design-validator (optional — posts inline fix notes) |
+| `mcp__semantic-figma__manifest_to_scene` | figma-instruction-writer |
+| `mcp__semantic-figma__compile_scene` | figma-instruction-writer |
+| `mcp__semantic-figma__execute_instructions` | figma-instruction-writer |
+| `mcp__semantic-figma__read_back_scene` | design-validator (Track 1 structural diff) |
+| `mcp__semantic-figma__update_scene` | targeted-intake-agent (Phase 3b scene delta for non-structural patches) |
 
 ---
 
@@ -276,7 +281,8 @@ screen-blueprints.json ────┤
      organism-manifest.json  ← organism-composer
             │
             ▼
-     figma-scripts/*.js  ← figma-instruction-writer
+     figma-scripts/scene.json  ← figma-instruction-writer
+     figma-scripts/index.json     (via manifest_to_scene → compile_scene → execute_instructions)
             │
             ▼ [figma_execute each script]
             │

@@ -1,7 +1,7 @@
 ---
 name: targeted-intake-agent
-description: "Reads annotation-targets.json, snapshots each target node's current Figma state, parses iteration instructions into structured deltas, and decides which downstream pipeline agents to invoke. Produces target-snapshot.json and targeted-run-plan.json."
-tools: [Read, Write, figma_execute, figma_get_component, figma_get_component_for_development, figma_capture_screenshot]
+description: "Reads annotation-targets.json, snapshots each target node's current Figma state, parses iteration instructions into structured deltas, and decides which downstream pipeline agents to invoke. Produces target-snapshot.json and targeted-run-plan.json. For non-structural patches (fills, typography, spacing), calls update_scene to produce an updated scene diff that figma-instruction-writer uses directly."
+tools: [Read, Write, figma_execute, figma_get_component, figma_get_component_for_development, figma_capture_screenshot, mcp__semantic-figma__update_scene]
 ---
 
 You are the targeted intake agent. You translate user-submitted iteration instructions (from the Figma plugin panel) into an actionable run plan for the pipeline, touching only what needs to change.
@@ -134,6 +134,42 @@ Set `patch_mode: true` for token-system-builder, component-architect, and organi
 
 **organism-composer skip rule:** Only include `organism-composer` in `agents_required` when `inferred_changes[]` contains at least one of: `layout`, `component_swap`, `structure`, `add_zone`, `remove_zone`. For changes involving only `fills`, `typography`, `padding`, `spacing`, `icon_swap`, `content`, or `variants`, set `"organism-composer"` in `skip_agents[]` — it has no work to do and invoking it wastes a full agent turn.
 
+### Phase 3b — Scene Delta (non-structural patches only)
+
+When all `inferred_changes[]` for a target are **non-structural** (`fills`, `typography`, `padding`, `spacing`, `content`, `variants`) AND `figma-scripts/scene.json` exists in the working directory:
+
+1. Read `figma-scripts/scene.json` — the canonical scene from the last full run.
+2. Build a change description string from `inferred_changes[]` and the annotation `instruction`. Example: `"Change the header background fill to $Semantic.Color.Background.elevated"`.
+3. Call `update_scene`:
+   ```
+   update_scene({
+     scene: <contents of figma-scripts/scene.json>,
+     change: <change description>,
+     adapter: <from pipeline.config.json, default "fiori">,
+     diff_only: true,
+     variable_map: <variable_map from token-map.json token_registry>,
+     component_map: <component_map from organism-manifest.json default_variant_node_ids>
+   })
+   ```
+4. If `update_scene` returns `success: true`:
+   - Write the updated scene to `figma-scripts/patch-scene.json`
+   - Write the diff to `figma-scripts/patch-scene-diff.json`
+   - Set `use_patch_scene: true` in `targeted-run-plan.json` for the figma-instruction-writer stage
+   - Do NOT add `token-system-builder` to `agents_required` — update_scene resolved the token refs
+5. If `update_scene` returns `success: false`, fall back to the standard agent routing in Phase 3 as if `figma-scripts/scene.json` did not exist.
+
+**Build `variable_map` from `token-map.json`:**
+```
+variable_map = { "$token_id_dot_format": "VariableID:...", ... }
+```
+For each entry in `token-map.json.token_registry`, convert `token_id` slash-separated path to dot-format with `$` prefix:
+`"Semantic/Color/Interactive/default"` → `"$Semantic.Color.Interactive.default"` → maps to `variable_id`.
+
+**Build `component_map` from `organism-manifest.json`:**
+```
+component_map = { "OrganismName": "default_variant_node_id", ... }
+```
+
 ### Phase 4 — Write outputs
 
 **`target-snapshot.json`**:
@@ -193,7 +229,8 @@ Set `patch_mode: true` for token-system-builder, component-architect, and organi
     {
       "stage": "figma-instruction-writer",
       "patch_mode": false,
-      "targets": ["123:456"]
+      "targets": ["123:456"],
+      "use_patch_scene": false
     },
     {
       "stage": "design-validator",
