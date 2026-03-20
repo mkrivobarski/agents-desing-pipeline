@@ -50,7 +50,9 @@ If `pipeline-progress.json` does not exist or `run_id` does not match, proceed w
     "copy-writer":             "pending|skipped|in_progress|done",
     "icon-mapper":             "pending|skipped|in_progress|done",
     "figma-instruction-writer":"pending|in_progress|done",
-    "design-validator":        "pending|in_progress|done|failed"
+    "design-validator":        "pending|in_progress|done|failed",
+    "ux-evaluator":            "pending|in_progress|done|failed",
+    "brand-compliance-agent":  "pending|in_progress|done|failed"
   }
 }
 ```
@@ -93,6 +95,14 @@ Ask exactly 3 questions — no more:
 2. "What are the target platforms?" (web / iOS / Android / all)
 3. "Are there any specific design system or brand constraints to follow?" (name the system or say 'none')
 
+Then ask the 3 UX intent questions as a condensed block — presented together as a single follow-up:
+```
+UX Intent (3 quick questions):
+Q_UX1: "What is the single most important action a user must be able to find and complete?" (1 sentence)
+Q_UX2: "What should a user feel at the end of completing that action?" (choose: delighted / satisfied / neutral, plus a free-text word)
+Q_UX3: "Who is the hardest user to design for — most likely to struggle with the interface?" (1–2 sentences)
+```
+
 Then fetch the Figma file overview:
 ```
 figma_get_file_data(verbosity='summary', depth=1)
@@ -102,7 +112,12 @@ Use the page structure to infer screens and flows. Proceed immediately to requir
 ### SCAN Mode (PRD or brief provided)
 Read all `.md`, `.txt`, `.pdf`, or `.json` files in the working directory that appear to be requirements or briefs.
 
-Identify gaps: requirements elements that are missing or ambiguous. Ask only about the gaps — maximum 5 questions. Present them as a numbered list so the user can answer quickly.
+Identify gaps: requirements elements that are missing or ambiguous. Ask only about the gaps — maximum 5 questions, plus the 3 UX intent questions below. Present them all as a numbered list so the user can answer quickly.
+
+UX intent questions to include in the gap-fill list:
+- Q_UX1: "What is the single most important action a user must be able to find and complete?" (1 sentence)
+- Q_UX2: "What should a user feel at the end of completing that action?" (choose: delighted / satisfied / neutral, plus a free-text word)
+- Q_UX3: "Who is the hardest user to design for — most likely to struggle with the interface?" (1–2 sentences)
 
 Gate A: After receiving answers, present the inferred `requirements.json` as a summary (project name, screen count, flows, token hints) and ask "Does this look correct? Any corrections?" before proceeding.
 
@@ -115,6 +130,9 @@ Run a structured 3-phase interview:
 - What platforms are you targeting?
 - Do you have a design system or component library already?
 - Any competitor products or reference designs for inspiration?
+- Q_UX1: "What is the single most important action a user must be able to find and complete in this product?" (1 sentence)
+- Q_UX2: "What should a user feel at the end of completing that action?" (choose: delighted / satisfied / neutral, plus a free-text word)
+- Q_UX3: "Who is the hardest user to design for — the person most likely to struggle with the interface?" (1–2 sentences describing constraints)
 
 **Phase 2 — Screen inventory** (after Phase 1 answers):
 - Walk through the key user journeys: "What does the user do first when they open the app?"
@@ -179,7 +197,33 @@ Write `pipeline-intake.json` as the run initialization record:
   "all_screens": true,
   "gates_enabled": { "A": true, "B": true, "C": true },
   "figma_write_agents": ["figma-instruction-writer", "prototype-linker", "organism-composer", "consistency-fixer", "motion-spec-agent"],
+  "ux_intent": {
+    "primary_action": "The single most important action a user must find and complete",
+    "success_emotion": "What a user should feel at the end (e.g. 'delighted — confident')",
+    "hardest_persona": "1–2 sentence description of the most constrained user"
+  },
   "intake_notes": []
+}
+```
+
+Store the UX intent answers verbatim in `ux_intent`. If the user did not answer these questions (e.g., TARGETED mode or DELTA mode), set all three fields to `"TBD"` and add a note to `intake_notes`.
+
+After writing `pipeline-intake.json`, write a stub `ux-acceptance-brief.json` populated with `product_intent` from the UX intent answers. Leave `screens[]` as an empty array — journey-mapper will populate it.
+
+```json
+{
+  "meta": {
+    "generated_at": "ISO8601",
+    "generated_by": "pipeline-intake-agent",
+    "project_name": "string"
+  },
+  "product_intent": {
+    "primary_action": "from ux_intent.primary_action",
+    "success_emotion": "from ux_intent.success_emotion",
+    "hardest_persona": "from ux_intent.hardest_persona",
+    "design_statement_ref": null
+  },
+  "screens": []
 }
 ```
 

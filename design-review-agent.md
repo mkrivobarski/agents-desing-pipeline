@@ -12,6 +12,7 @@ Read from the working directory:
 - `extracted-frames/index.json` — produced by the figma-frame-extractor; lists all extracted screens with their nodeIds, names, and paths to per-screen JSON data files
 - `figma-tokens.json` — the project's resolved token registry (token names → hex/value)
 - `requirements.json` (optional) — if present, use it to validate intent; it may contain expected component names, accessibility requirements, and brand constraints
+- `user-flows.json` (optional) — if present, used for Category 9: Navigation Coherence checks
 
 For each screen entry in `extracted-frames/index.json`, read the corresponding per-screen data file (typically `extracted-frames/[screen_id].json`) to access layer tree, component instances, spacing values, colour fills, and typography details.
 
@@ -38,7 +39,7 @@ Document which method was used in `meta.screenshot_method` in `design-review.jso
 
 ## Review Categories
 
-Evaluate every screen against all eight categories below. Record every finding with the exact path to the offending layer.
+Evaluate every screen against all nine categories below. Record every finding with the exact path to the offending layer.
 
 ### Category 1: Accessibility
 
@@ -103,6 +104,40 @@ Scan all layer and frame names:
 - **Detached components** — component instances where all component links have been broken (the layer is a plain frame matching a known component structure): `warning`.
 - **Orphaned variants** — component instances using a variant property value that no longer exists in the component set: `error`.
 
+### Category 9: Navigation Coherence
+
+Inputs: `user-flows.json` (if available) + layer data from `extracted-frames/index.json`
+
+This category is skipped if `user-flows.json` is not present in the working directory. Note the absence in `reviewerNotes`.
+
+**Check 9.1 — Interactive element coverage:**
+For every flow edge in `user-flows.json`, verify that an interactive element exists on the source screen that plausibly triggers the navigation. Match by:
+- `trigger.element` field on the edge (if present) compared against slot names or layer names on the source screen
+- If `trigger.element` is present and no matching layer is found: `warning`
+- If `trigger.element` is absent: skip this check for that edge
+
+**Check 9.2 — Back control on depth > 1 screens:**
+For every screen with flow depth > 1 in the flow graph (i.e., not a root entry point and not a modal):
+- Check the screen's layer data for any of: a layer named with "back", "close", "cancel", or "dismiss" prefix (case-insensitive), OR a navigation bar component with a back arrow icon, OR the blueprint's `navigation_controls.back_button: true` (if `screen-blueprints.json` is readable)
+- If none found: `warning` — "Missing back control on screen that requires navigation reversal"
+
+**Check 9.3 — Tab bar on tab_root screens:**
+For every screen marked as a `tab_root` entry point in `user-flows.json`:
+- Check the screen's layer data for a footer zone containing a tab bar component (layer name contains "tab", "bottom_nav", or "tab_bar", case-insensitive), OR a component instance with a tab bar variant
+- If not found: `error` — "Tab root screen missing tab bar organism in footer zone"
+
+**Check 9.4 — Empty state completeness for list screens:**
+For every screen that the flow graph or screen name suggests is a list screen (screen_id or name contains "list", "search", "feed", "history", or "inbox"):
+- Cross-check `lo-fi-frames/index.json` (if available) to verify an empty state frame exists for this screen
+- Cross-check `organism-manifest.json` (if available) to verify empty state placements exist
+- If no empty state evidence found: `warning` — "List screen has no empty state representation"
+
+**Severity:**
+- Missing interactive element for flow edge: `warning`
+- Missing back control on depth > 1 screen: `warning`
+- Missing tab bar on tab_root screen: `error`
+- Missing empty state on list screen: `warning`
+
 ## Tool Usage
 
 Use the following tools to fetch detailed data where the extracted JSON does not contain sufficient information:
@@ -157,7 +192,7 @@ Write two files:
       "checks": [
         {
           "checkId": "screen_id__category__001",
-          "category": "accessibility|consistency|token_adherence|spacing|typography|pattern_abstraction|naming|design_debt",
+          "category": "accessibility|consistency|token_adherence|spacing|typography|pattern_abstraction|naming|design_debt|navigation_coherence",
           "severity": "error|warning|suggestion",
           "message": "One-sentence description of the issue",
           "location": "Layer path e.g. HomeScreen / Content / CardList / Card1 / Title",
@@ -179,7 +214,8 @@ Write two files:
       "typography": { "error": 0, "warning": 0, "suggestion": 0 },
       "pattern_abstraction": { "error": 0, "warning": 0, "suggestion": 0 },
       "naming": { "error": 0, "warning": 0, "suggestion": 0 },
-      "design_debt": { "error": 0, "warning": 0, "suggestion": 0 }
+      "design_debt": { "error": 0, "warning": 0, "suggestion": 0 },
+      "navigation_coherence": { "error": 0, "warning": 0, "suggestion": 0 }
     },
     "byScreen": [
       {
@@ -256,5 +292,6 @@ A score ≥ 90 is excellent. 75–89 is acceptable with minor rework. 60–74 re
 - Cross-screen consistency checks must cite both screen IDs (`screenA` and `screenB` both use…).
 - Pattern entries require at least 2 occurrence screen IDs — do not flag single-use elements as patterns.
 - The `score` in the summary must be computed from the actual counts, not estimated.
+- Category 9 (Navigation Coherence) is skipped if `user-flows.json` is absent — note the skip in `reviewerNotes`.
 - All file reads and writes must be scoped to the pipeline working directory. Never access paths outside `working_dir`.
 - Write both output files before declaring completion.

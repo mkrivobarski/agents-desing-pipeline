@@ -1,0 +1,129 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "ux-evaluation-report.schema.json",
+  "title": "UX Evaluation Report",
+  "description": "Produced by ux-evaluator after design-validator. Confirms ux-acceptance-brief.json criteria against final built screens. Regressions indicate something broke between lo-fi and final build.",
+  "type": "object",
+  "required": ["meta", "screens", "regressions"],
+  "properties": {
+    "meta": {
+      "type": "object",
+      "required": ["evaluated_at", "total_checks", "pass", "fail", "warn", "regression_count"],
+      "properties": {
+        "evaluated_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO 8601 timestamp when the evaluation was run"
+        },
+        "total_checks": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Total number of checks run across all screens"
+        },
+        "pass": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Total checks that passed"
+        },
+        "fail": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Total checks that failed"
+        },
+        "warn": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Total checks that produced warnings"
+        },
+        "regression_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of findings that passed at Gate 0 but failed at Gate 4"
+        }
+      },
+      "additionalProperties": false
+    },
+    "screens": {
+      "type": "array",
+      "description": "Per-screen evaluation results",
+      "items": {
+        "type": "object",
+        "required": ["screen_id", "emotion_target", "checks"],
+        "properties": {
+          "screen_id": {
+            "type": "string",
+            "description": "Matches screen_id in ux-acceptance-brief.json"
+          },
+          "emotion_target": {
+            "type": "string",
+            "enum": ["delighted", "satisfied", "neutral"],
+            "description": "Copied from ux-acceptance-brief.json for reference"
+          },
+          "checks": {
+            "type": "array",
+            "description": "Individual check results for this screen",
+            "items": {
+              "type": "object",
+              "required": ["criterion", "result", "is_regression"],
+              "properties": {
+                "criterion": {
+                  "type": "string",
+                  "description": "The acceptance criterion or named check being evaluated"
+                },
+                "result": {
+                  "type": "string",
+                  "enum": ["PASS", "FAIL", "WARN"],
+                  "description": "Check result"
+                },
+                "is_regression": {
+                  "type": "boolean",
+                  "description": "true if this criterion passed at Gate 0 but fails here (regression signal)"
+                },
+                "note": {
+                  "type": "string",
+                  "description": "Additional context or fix guidance"
+                }
+              },
+              "additionalProperties": false
+            }
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "regressions": {
+      "type": "array",
+      "description": "Checks that passed at Gate 0 (lo-fi evaluation) but failed at Gate 4 (post-build evaluation). Each regression is a signal that something broke between lo-fi and final build.",
+      "items": {
+        "type": "object",
+        "required": ["screen_id", "criterion", "passed_at_gate0", "failed_at_gate4", "likely_cause"],
+        "properties": {
+          "screen_id": {
+            "type": "string",
+            "description": "The screen where the regression occurred"
+          },
+          "criterion": {
+            "type": "string",
+            "description": "The acceptance criterion that regressed"
+          },
+          "passed_at_gate0": {
+            "type": "boolean",
+            "const": true,
+            "description": "Always true for regression entries"
+          },
+          "failed_at_gate4": {
+            "type": "boolean",
+            "const": true,
+            "description": "Always true for regression entries"
+          },
+          "likely_cause": {
+            "type": "string",
+            "description": "Best-effort explanation of what likely caused the regression (e.g. 'organism placement changed CTA position', 'token swap altered button hierarchy')"
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

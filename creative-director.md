@@ -14,6 +14,7 @@ Read from the working directory:
 - `reference-materials.json` — **primary visual anchor**: brand assets with extracted colours/fonts/radius, mood references, typography references, imagery references, and named references to research (from requirements-analyst)
 - `requirements.json` — brand constraints, explicit specs, product domain, platform targets, personas, competitive references
 - `journey-map.json` — if available; emotional highs and lows inform motion and colour mood
+- `ux-acceptance-brief.json` — if available; per-screen emotion targets inform the desirability brief
 
 Also look for any of:
 - `brand-guidelines.md`, `BRAND.md`, `brand.json` — any explicit brand rules
@@ -140,6 +141,31 @@ For each dimension below, check `requirements.json` first:
 ### 8. Overall Design Personality
 
 Write a 2–3 sentence `design_statement` that captures the overall visual personality. This is used by downstream agents when making small decisions not covered above (e.g., should an error icon be rounded or sharp?). Aim for specificity over aspiration — not "clean and modern" but "precise and data-forward with moments of warmth through type and illustration".
+
+### 9. Desirability Brief
+
+After writing `creative-direction.json`, read `ux-acceptance-brief.json` (if present) and cross-reference per-screen `emotion_target` values against the creative decisions you just made. Write `desirability-brief.json` with one entry per screen.
+
+**Emotion target → motion register mapping:**
+- `emotion_target: "delighted"` — `motion_register_required` must be `"smooth"` or `"expressive"`. If the overall `creative-direction.json` motion register is `"instant"` or `"snappy"`, flag this in the entry's `colour_personality_signal` as a tension point and recommend per-screen override.
+- `emotion_target: "satisfied"` — `motion_register_required` is `"snappy"` or `"smooth"`.
+- `emotion_target: "neutral"` — `motion_register_required` matches the overall `creative-direction.json` motion register.
+
+**Colour personality signal per screen:**
+- For screens on the primary flow (`goal_alignment: "high"` in `ux-acceptance-brief.json`): verify that the colour personality choice creates sufficient visual weight on primary actions. Document the signal (e.g., "primary CTA uses color.primary.500 on surface.default — adequate contrast and visual weight").
+- For `"delighted"` screens: note whether the colour palette supports warmth or celebration.
+
+**Visual tone proxies:** Produce 2–3 per screen. Each proxy is a concrete token-level or structural decision that correlates with the emotion target (e.g., "Uses elevated card surface (color.surface.elevated) rather than flat surface to signal premium feel").
+
+**Anti-patterns:** List 1–3 things that would signal the wrong emotional tone on this screen.
+
+**Brand compliance anchors:** Populate from `creative-direction.json`:
+- `primary_cta_token` — the token name that maps to the primary colour at 500/600 weight
+- `error_token` — the token name for the error feedback colour
+- `headline_family` — from `creative-direction.json:typography.heading_family.name`
+- `approved_icon_family` — from `creative-direction.json:iconography.library`
+
+If `ux-acceptance-brief.json` is absent (pipeline ran without it), write `desirability-brief.json` with an empty `per_screen` array and note the absence in `meta`.
 
 ---
 
@@ -340,5 +366,6 @@ Write `creative-direction.json`:
 - Typography pairings must be intentional — if using two families, they must contrast (e.g., geometric sans + humanist sans, or serif heading + sans body)
 - The `design_statement` must be specific and product-appropriate — not generic design language
 - Never invent brand colours that contradict explicit brief values — if the brief says "blue", all brand decisions must work within the blue family
-- Write `creative-direction.json` before declaring completion
+- Write `creative-direction.json` before writing `desirability-brief.json`
+- Write `desirability-brief.json` after `creative-direction.json` is complete — even if `ux-acceptance-brief.json` is absent (write with empty `per_screen` array)
 - All file reads and writes must be scoped to the pipeline working directory

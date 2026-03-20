@@ -1,0 +1,83 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "gate0-evaluation.schema.json",
+  "title": "Gate 0 UX/D Evaluation",
+  "description": "Structural UX and discoverability evaluation produced by lo-fi-builder immediately before presenting Gate 0 to the user. Written to lo-fi-frames/gate0-evaluation.json.",
+  "type": "object",
+  "required": ["evaluated_at", "total_checks", "pass", "fail", "warn", "checks", "gate_recommendation"],
+  "properties": {
+    "evaluated_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 timestamp when the evaluation was run"
+    },
+    "total_checks": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Total number of checks run"
+    },
+    "pass": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Number of checks that passed"
+    },
+    "fail": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Number of checks that failed"
+    },
+    "warn": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Number of checks that produced warnings"
+    },
+    "checks": {
+      "type": "array",
+      "description": "Individual check results",
+      "items": {
+        "type": "object",
+        "required": ["check_id", "dimension", "screen_id", "description", "result", "fix_cost", "fix_instruction"],
+        "properties": {
+          "check_id": {
+            "type": "string",
+            "description": "Unique identifier for this check (e.g. 'usability__home__cta_above_fold')"
+          },
+          "dimension": {
+            "type": "string",
+            "enum": ["usability", "discoverability"],
+            "description": "Which UX dimension this check evaluates"
+          },
+          "screen_id": {
+            "type": "string",
+            "description": "The screen this check applies to"
+          },
+          "description": {
+            "type": "string",
+            "description": "Human-readable description of what was checked"
+          },
+          "result": {
+            "type": "string",
+            "enum": ["PASS", "FAIL", "WARN"],
+            "description": "Check result"
+          },
+          "fix_cost": {
+            "type": "string",
+            "enum": ["wireframe", "blueprint", "flows"],
+            "description": "What artifact needs to change to fix this finding. wireframe = lo-fi frame layout; blueprint = screen-blueprints.json; flows = user-flows.json"
+          },
+          "fix_instruction": {
+            "type": "string",
+            "description": "Specific, actionable instruction for how to fix the finding"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "gate_recommendation": {
+      "type": "string",
+      "enum": ["proceed", "fix_first", "human_review"],
+      "description": "proceed = all checks pass; fix_first = one or more FAILs require resolution before continuing; human_review = warns only, present to user for decision"
+    }
+  },
+  "additionalProperties": false
+}

@@ -12,6 +12,7 @@ You never design screens or specify UI. You map goals, steps, emotions, and pain
 
 Read from the working directory:
 - `requirements.json` — screen inventory, user types, constraints, flows
+- `ux-acceptance-brief.json` — stub written by pipeline-intake-agent; contains `product_intent`; `screens[]` is empty and must be populated
 
 ## Your Responsibilities
 
@@ -72,7 +73,31 @@ journey
 
 Values are satisfaction scores 1–5.
 
-### 5. Build the Figma Journey Maps Page
+### 5. Populate `ux-acceptance-brief.json`
+
+After mapping all journeys, update `ux-acceptance-brief.json` by populating the `screens[]` array. Read the stub file (already written by pipeline-intake-agent), preserve `meta` and `product_intent`, and write a screen entry for every journey step that has a non-null `screen_ref`.
+
+For each step with a `screen_ref`:
+- Set `screen_id` from `step.screen_ref`
+- Set `screen.user_goal` from `step.action`
+- Set `screen.goal_alignment` from `step.goal_alignment`
+- Set `screen.emotion_target` by mapping `step.emotion`:
+  - `delighted` → `"delighted"`
+  - `satisfied` → `"satisfied"`
+  - `neutral` → `"neutral"`
+  - `frustrated` | `confused` | `blocked` → set `emotion_target` to `"satisfied"` (recovery target) and set `emotion_risk` to the original emotion value with a brief note
+- Set `screen.primary_cta_slot_id` to `null` (wireframe-strategist will fill this in). If `step.opportunities` contains an explicit CTA reference (e.g., "Add a button for X"), parse and set it; otherwise leave null.
+- Set `screen.required_states` based on the screen's data dependency (infer: all data-driven screens need `["default","loading","error"]`; list screens also need `"empty"`; pure static screens need only `["default"]`)
+- Set `screen.max_cognitive_items` to `null` (wireframe-strategist will fill this in)
+- Set `screen.reachability_max_taps` to `null` (wireframe-strategist will fill this in)
+- Set `screen.accessibility_priority` to `"high"` if the screen is on the primary flow (goal_alignment: high) or if `ux-acceptance-brief.json:product_intent.hardest_persona` references a constrained user; otherwise `"standard"`
+- Populate `acceptance_criteria` by converting `step.opportunities` into testable assertion strings (e.g., "Add a deep link" → "Deep link from notification lands on renewal screen")
+
+If multiple journey steps map to the same `screen_ref`, merge their opportunities into a single screen entry — do not create duplicate entries.
+
+After populating screens[], write the updated `ux-acceptance-brief.json` to the working directory. Validate the output against `schemas/ux-acceptance-brief.schema.json` before writing.
+
+### 6. Build the Figma Journey Maps Page
 
 Create a dedicated Figma page named "Journey Maps". This page is for human review only — it is **never referenced by downstream pipeline agents**.
 
@@ -204,5 +229,6 @@ A human-readable markdown document:
 - Mermaid diagrams must be syntactically valid `journey` type diagrams
 - The Figma page uses only hardcoded values (no variable bindings) — this is explicitly permitted for journey maps
 - Never reference journey map frame node IDs from other pipeline agents — this page is human-review-only
-- Write both `journey-map.json` and `journey-map.md` before declaring completion
+- Write `journey-map.json`, `journey-map.md`, and `ux-acceptance-brief.json` before declaring completion
+- `ux-acceptance-brief.json` must have one entry per unique `screen_ref` found across all persona journeys — do not leave `screens[]` empty
 - All file reads and writes must be scoped to the pipeline working directory

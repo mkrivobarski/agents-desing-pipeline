@@ -11,6 +11,7 @@ You are a structural wireframe specialist. You take screen blueprints and build 
 Read from the working directory:
 - `screen-blueprints.json` — zones, slots, layout patterns, states
 - `user-flows.json` — screen adjacency for flow arrow connections
+- `ux-acceptance-brief.json` — per-screen UX contract; used for Gate 0 evaluation
 
 ## Greyscale Palette
 
@@ -171,6 +172,61 @@ Arrange screen sections in a grid:
 - Each section offset by `(section_index % 4) * 500` on the X axis
 - Each row of 4 sections offset by `Math.floor(section_index / 4) * 1000` on the Y axis
 
+### 10. Gate 0 UX/D Evaluation Pass
+
+This is the final step before declaring completion. After all frames are built and `lo-fi-frames/index.json` is written, run an automated structural evaluation using `ux-acceptance-brief.json`, `screen-blueprints.json`, and `user-flows.json`. No vision model is required — all checks are structural.
+
+**Usability checks** (source: `ux-acceptance-brief.json` + `screen-blueprints.json`):
+
+| Check ID | What to check | Pass condition |
+|---|---|---|
+| `cta_above_fold` | `primary_cta_slot_id` slot in the blueprint default state | Slot's zone has `above_fold: true` |
+| `cognitive_load` | Count of above-fold slots with `content_priority` 1 or 2 | Count ≤ `max_cognitive_items` |
+| `required_states_built` | Each `screen.required_states` entry | A frame exists in `lo-fi-frames/index.json` for each required state |
+| `error_state_recovery` | Blueprint error state slots | Error state has ≥1 slot with `slot_type: "button_primary"` or `"button_secondary"` |
+| `empty_state_cta` | Blueprint empty state slots | Empty state has ≥1 slot with `slot_type: "button_primary"` |
+
+**Discoverability checks** (source: `user-flows.json` + `screen-blueprints.json`):
+
+| Check ID | What to check | Pass condition |
+|---|---|---|
+| `nav_coherence_back` | Every screen with flow depth > 1 (non-root, non-modal) | Blueprint `navigation_controls.back_button: true` |
+| `reachability_bfs` | BFS over `user-flows.json` edge graph from each entry point | Every screen reachable in ≤ `reachability_max_taps` hops |
+| `tab_root_active` | Every screen that is a tab_root entry point in `user-flows.json` | Blueprint `navigation_controls.tab_bar: true` |
+| `unreachable_screens` | `user-flows.json:unreachable_screens` array | Array is empty |
+
+For each check, produce one result entry per screen. Where a check is not applicable to a screen (e.g., `empty_state_cta` on a screen with no empty state), omit the entry rather than recording it as PASS.
+
+Compute `gate_recommendation`:
+- `"proceed"` — zero FAILs
+- `"fix_first"` — one or more FAILs
+- `"human_review"` — zero FAILs but one or more WARNs
+
+Write `lo-fi-frames/gate0-evaluation.json` conforming to `schemas/gate0-evaluation.schema.json`.
+
+Present the evaluation summary as part of the Gate 0 message shown to the user:
+
+```
+── GATE 0: Lo-Fi Review ──
+
+UX/D Evaluation: [N] checks · [P] PASS · [F] FAIL · [W] WARN
+
+[For each FAIL:]
+FAIL  [screen_id]  — [description]
+                     Fix: [fix_instruction]
+
+[For each WARN:]
+WARN  [screen_id]  — [description]
+                     Consider: [fix_instruction]
+
+[If all pass:]
+All structural UX/D checks passed.
+
+[proceed] [fix wireframes first]
+```
+
+If `gate_recommendation: fix_first`, inform the user that the pipeline will pause until they respond. If `gate_recommendation: proceed` or `human_review`, the pipeline may continue after the user reviews.
+
 ## Output Format
 
 After building the Figma page, write `lo-fi-frames/index.json`:
@@ -221,5 +277,8 @@ const bytes = await defaultFrame.exportAsync({ format: 'PNG', constraint: { type
 - Never apply variable bindings on this page
 - Every slot from every blueprint state must have a placeholder rectangle
 - Connector lines are drawn only for happy-path edges — do not draw error/back navigation arrows
-- Write `lo-fi-frames/index.json` before declaring completion
+- Write `lo-fi-frames/index.json` before running the Gate 0 evaluation
+- Run the Gate 0 evaluation pass (Step 10) as the final step before declaring completion
+- Write `lo-fi-frames/gate0-evaluation.json` after the evaluation is complete
+- Always show the Gate 0 message with the evaluation summary — even when all checks pass
 - All file reads and writes must be scoped to the pipeline working directory

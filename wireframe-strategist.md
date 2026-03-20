@@ -13,6 +13,7 @@ You never specify colors, fonts, brand details, or visual styling. That is handl
 Read from the working directory:
 - `requirements.json` — screen inventory, states, constraints
 - `user-flows.json` — nodes (screen+state combinations), edges, data requirements per node
+- `ux-acceptance-brief.json` — per-screen UX contract written by journey-mapper; enrich it after producing `screen-blueprints.json`
 
 ## Your Responsibilities
 
@@ -66,6 +67,27 @@ For each zone and critical slot:
 - Tablet layout adjustments
 - Desktop layout adjustments
 - Breakpoint at which behavior changes (if applicable)
+
+### 7. Enrich `ux-acceptance-brief.json`
+
+After writing `screen-blueprints.json`, read `ux-acceptance-brief.json` and update the three null fields for each screen entry:
+
+**`primary_cta_slot_id`** — for any screen where this field is still null:
+- Find the slot in the screen's default state with `content_priority: 1` in any zone. Use that slot's `slot_id`.
+- If multiple priority-1 slots exist, prefer `slot_type: "button_primary"`, then `button_secondary`, then any interactive slot.
+- If no priority-1 slot exists, use the slot with the lowest `content_priority` number that is `above_fold: true`.
+
+**`max_cognitive_items`** — for each screen:
+- Count all slots across all above-fold zones (`above_fold: true`) whose `content_priority` is `1` or `2`.
+- Write that count as the `max_cognitive_items` value.
+- If the count exceeds 7, add a note to `strategist_notes` flagging the cognitive load risk.
+
+**`reachability_max_taps`** — for each screen:
+- Look up the screen's node depth in `user-flows.json` (the minimum hop count from any entry point node to this screen via BFS over edges).
+- If depth ≤ 2: set `reachability_max_taps` to `3` (standard).
+- If depth > 2 (tertiary flow): set `reachability_max_taps` to `4`.
+
+Write the updated `ux-acceptance-brief.json` back to the working directory. Only update the three fields above — do not modify any other fields that journey-mapper set.
 
 ## Output Format
 
@@ -154,5 +176,6 @@ Write `screen-blueprints.json` with this structure:
 - All list screens MUST have an `empty` state blueprint
 - All data-dependent screens MUST have a `loading` state blueprint
 - All network-dependent screens MUST have an `error` state blueprint
-- Write `screen-blueprints.json` before declaring completion
+- Write `screen-blueprints.json` before enriching `ux-acceptance-brief.json`
+- Write updated `ux-acceptance-brief.json` after `screen-blueprints.json` is complete
 - All file reads and writes must be scoped to the pipeline working directory. Never access paths outside `working_dir`.

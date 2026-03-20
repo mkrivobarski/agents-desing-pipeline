@@ -85,6 +85,10 @@ The pipeline runs in two modes:
       design-validator ──► validation-reports/
        ── GATE 4 ──
               │
+         [parallel]
+         ├── ux-evaluator ──► ux-evaluation-report.json
+         └── brand-compliance-agent ──► brand-compliance-report.json
+              │
               ▼
       prototype-linker ──► [Figma prototype with navigation links]
               │
@@ -128,6 +132,7 @@ The pipeline runs in two modes:
 - Pattern abstraction (recurring UI patterns → component candidates)
 - Naming conventions (default layer names)
 - Design debt (duplicates, hidden layers, detached components)
+- Navigation coherence (interactive element coverage, back controls, tab bar presence, empty state completeness)
 
 **Consistency analysis produces:**
 - Colour frequency map (in-system vs rogue hex values)
@@ -152,6 +157,13 @@ The pipeline runs in two modes:
 | `icon-mapper` | `organism-manifest.json`, `creative-direction.json`, `component-manifest.json`, `requirements.json`, `screen-blueprints.json` | `icon-manifest.json` + updated `organism-manifest.json` | Assigns semantically appropriate icon names to null INSTANCE_SWAP icon slots; never modifies layout, variants, text props, or specified icons |
 | `figma-instruction-writer` | `organism-manifest.json`, `built-component-library.json`, `component-manifest.json`, `token-map.json`, `creative-direction.json` | `figma-scripts/[screen_id].js` | Applies image treatment, icon sizes, and font loading from creative-direction |
 | `design-validator` | Screenshots, `built-component-library.json`, blueprints, `organism-manifest.json`, token-map | `validation-reports/[screen_id]__report.json` | Depth-6 extraction; instance validation category |
+
+### Gate 4 Evaluation Stage
+
+| Agent | Input | Output | Notes |
+|---|---|---|---|
+| `ux-evaluator` | `ux-acceptance-brief.json`, `organism-manifest.json`, `built-component-library.json`, `validation-reports/`, `user-flows.json`, `lo-fi-frames/gate0-evaluation.json` | `ux-evaluation-report.json`, `ux-evaluation-report.md` | Confirmation-mode; runs in parallel with brand-compliance-agent after design-validator |
+| `brand-compliance-agent` | `requirements.json`, `extracted-frames/index.json`, `figma-tokens.json`, `ux-acceptance-brief.json`, `desirability-brief.json` | `brand-compliance-report.json`, `brand-compliance-report.md` | Includes Emotional Tone category; runs in parallel with ux-evaluator after design-validator |
 
 ### Output Stage
 
@@ -261,11 +273,19 @@ requirements.json ─────────┤
 user-flows.json ───────────┤
 screen-blueprints.json ────┤
             │
+            ├─► ux-acceptance-brief.json (stub)  ← pipeline-intake-agent
+            │       │
             ├─► journey-map.json          ← journey-mapper
-            │   (+ Figma "Journey Maps" page)
+            │   ux-acceptance-brief.json (screens[] populated)
+            │
+            ├─► screen-blueprints.json    ← wireframe-strategist
+            │   ux-acceptance-brief.json (cta slot + cognitive count enriched)
             │
             ├─► lo-fi-frames/index.json   ← lo-fi-builder
-            │   (+ Figma "Lo-Fi Wireframes" page)
+            │   lo-fi-frames/gate0-evaluation.json
+            │
+            ├─► creative-direction.json   ← creative-director
+            │   desirability-brief.json
             │
             ▼
         token-map.json  ← token-system-builder
@@ -293,11 +313,23 @@ screen-blueprints.json ────┤
             ▼
      validation-reports/  ← design-validator
             │
-     user-flows.json ─────────────────────────────┐
-     figma-source.json ───────────────────────────┤
-                                                   ▼
-                                          prototype-links.json  ← prototype-linker
-                                          [Figma prototype ready]
+     [parallel after Gate 4]
+     ux-acceptance-brief.json ──────────────────────┐
+     organism-manifest.json ────────────────────────┤
+     lo-fi-frames/gate0-evaluation.json ────────────┤
+                                                    ▼
+                                          ux-evaluation-report.json  ← ux-evaluator
+                                                    │
+     desirability-brief.json ──────────────────────┐│
+     ux-acceptance-brief.json ─────────────────────┼┤
+                                                    ▼│
+                                          brand-compliance-report.json  ← brand-compliance-agent
+                                                    ││
+     user-flows.json ─────────────────────────────┐ ││
+     figma-source.json ───────────────────────────┤ ││
+                                                  ▼ ▼▼
+                                         prototype-links.json  ← prototype-linker
+                                         [Figma prototype ready]
                                                    │
                                                    ▼
                                           delivery-package/  ← delivery-sequencer
@@ -322,27 +354,32 @@ screen-blueprints.json ────┤
 
 ### Brief-First (new project)
 ```
-1.  requirements-analyst    → requirements.json
-2.  flow-architect          → user-flows.json
-3.  wireframe-strategist    → screen-blueprints.json
-4.  journey-mapper          → journey-map.json + Figma "Journey Maps" page
-5.  lo-fi-builder           → lo-fi-frames/ + Figma "Lo-Fi Wireframes" page
-                              ── GATE 0: validate structure before investing in tokens ──
-6.  token-system-builder    → token-map.json + Figma Variables committed
-                              ── GATE 1: review token coverage ──
-7.  component-architect     → component-manifest.json + component-build-plan.json
-                              ── GATE 2: review build plan ──
-8.  component-builder       → built-component-library.json + Figma COMPONENT nodes
-                              ── GATE 3: verify first-screen screenshot ──
-9.  organism-composer       → organism-manifest.json
-10. copy-writer             → copy-manifest.json + organism-manifest.json (copy values)
-11. icon-mapper             → icon-manifest.json + organism-manifest.json (icon names)
-12. figma-instruction-writer → figma-scripts/
-12. [figma_execute each script]
-13. design-validator        → validation-reports/
-                              ── GATE 4: parity score ≥ 0.95 ──
-14. prototype-linker        → Figma prototype links
-15. delivery-sequencer      → HANDOFF.md
+1.  pipeline-intake-agent    → requirements.json + ux-acceptance-brief.json (stub)
+2.  requirements-analyst     → requirements.json (enriched)
+3.  flow-architect           → user-flows.json
+4.  wireframe-strategist     → screen-blueprints.json + ux-acceptance-brief.json (enriched)
+5.  journey-mapper           → journey-map.json + ux-acceptance-brief.json (complete)
+6.  lo-fi-builder            → lo-fi-frames/ + gate0-evaluation.json
+                               ── GATE 0: UX/D evaluation + human review ──
+7.  creative-director        → creative-direction.json + desirability-brief.json
+                               ── GATE 0.5: human review ──
+8.  token-system-builder     → token-map.json + Figma Variables committed
+                               ── GATE 1: review token coverage ──
+9.  component-architect      → component-manifest.json + component-build-plan.json
+                               ── GATE 2: review build plan ──
+10. component-builder        → built-component-library.json + Figma COMPONENT nodes
+                               ── GATE 3: verify first-screen screenshot ──
+11. organism-composer        → organism-manifest.json
+12. copy-writer              → copy-manifest.json + organism-manifest.json (copy values)
+13. icon-mapper              → icon-manifest.json + organism-manifest.json (icon names)
+14. figma-instruction-writer → figma-scripts/
+14. [figma_execute each script]
+15. design-validator         → validation-reports/
+                               ── GATE 4: parity score ≥ 0.95 ──
+16. [parallel]
+    ├── ux-evaluator         → ux-evaluation-report.json
+    └── brand-compliance-agent → brand-compliance-report.json
+17. delivery-sequencer       → HANDOFF.md
 ```
 
 ---

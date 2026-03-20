@@ -1,0 +1,123 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "ux-acceptance-brief.schema.json",
+  "title": "UX Acceptance Brief",
+  "description": "Per-screen UX contract written early in the pipeline and consumed by every evaluation step. Travels the full pipeline as a stable reference.",
+  "type": "object",
+  "required": ["meta", "product_intent", "screens"],
+  "properties": {
+    "meta": {
+      "type": "object",
+      "required": ["generated_at", "generated_by", "project_name"],
+      "properties": {
+        "generated_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO 8601 timestamp of when this file was first created"
+        },
+        "generated_by": {
+          "type": "string",
+          "description": "Which agent(s) produced this file (e.g. 'pipeline-intake-agent + journey-mapper')"
+        },
+        "project_name": {
+          "type": "string",
+          "description": "Project name from pipeline.config.json"
+        }
+      },
+      "additionalProperties": false
+    },
+    "product_intent": {
+      "type": "object",
+      "required": ["primary_action", "success_emotion", "hardest_persona"],
+      "properties": {
+        "primary_action": {
+          "type": "string",
+          "description": "The single most important action a user must find and complete in this product"
+        },
+        "success_emotion": {
+          "type": "string",
+          "description": "What a user should feel at the end of completing the primary action (e.g. 'delighted — feels in control')"
+        },
+        "hardest_persona": {
+          "type": "string",
+          "description": "The persona the design must not fail — most constrained user (1–2 sentences describing constraints)"
+        },
+        "design_statement_ref": {
+          "type": ["string", "null"],
+          "description": "Reference to creative-direction.json:meta.design_statement (null until creative-director runs)"
+        }
+      },
+      "additionalProperties": false
+    },
+    "screens": {
+      "type": "array",
+      "description": "Per-screen UX contract entries. Populated by journey-mapper and enriched by wireframe-strategist.",
+      "items": {
+        "type": "object",
+        "required": ["screen_id", "user_goal", "goal_alignment", "emotion_target", "required_states", "acceptance_criteria"],
+        "properties": {
+          "screen_id": {
+            "type": "string",
+            "description": "Matches screen_id in requirements.json and user-flows.json"
+          },
+          "user_goal": {
+            "type": "string",
+            "description": "What the user is trying to accomplish on this screen (from journey step action)"
+          },
+          "goal_alignment": {
+            "type": "string",
+            "enum": ["high", "medium", "low"],
+            "description": "How directly this screen serves the user's primary goal"
+          },
+          "emotion_target": {
+            "type": "string",
+            "enum": ["delighted", "satisfied", "neutral"],
+            "description": "Target emotional state for the user on this screen"
+          },
+          "emotion_risk": {
+            "type": ["string", "null"],
+            "description": "Set when journey step emotion was frustrated/confused/blocked — note the risk"
+          },
+          "primary_cta_slot_id": {
+            "type": ["string", "null"],
+            "description": "slot_id from screen-blueprints.json for the primary CTA. Null until wireframe-strategist runs."
+          },
+          "max_cognitive_items": {
+            "type": ["integer", "null"],
+            "minimum": 1,
+            "description": "Maximum number of above-fold content priority 1+2 items. Null until wireframe-strategist runs."
+          },
+          "required_states": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": ["default", "loading", "error", "empty"]
+            },
+            "minItems": 1,
+            "description": "Which states must be built for this screen"
+          },
+          "reachability_max_taps": {
+            "type": ["integer", "null"],
+            "minimum": 1,
+            "description": "Maximum number of taps to reach this screen from an entry point. Null until wireframe-strategist runs. Default 3; tertiary flows (depth > 2) use 4."
+          },
+          "accessibility_priority": {
+            "type": "string",
+            "enum": ["high", "standard"],
+            "description": "high = must pass WCAG AAA; standard = WCAG AA minimum"
+          },
+          "acceptance_criteria": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "description": "Testable assertion strings derived from journey step opportunities"
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

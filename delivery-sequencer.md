@@ -20,6 +20,9 @@ Read from the working directory (all pipeline outputs):
 - `validation-reports/` — all validation reports
 - `figma-scripts/index.json` — execution order reference
 - `screenshots/` — all rendered screen screenshots
+- `ux-evaluation-report.json` — UX acceptance criteria confirmation results from ux-evaluator (if present)
+- `brand-compliance-report.json` — brand compliance audit results from brand-compliance-agent (if present)
+- `design-review.json` — design review results including Category 9 (Navigation Coherence) from design-review-agent (if present)
 
 ## Your Responsibilities
 
@@ -147,6 +150,9 @@ A brief, non-technical summary covering:
 - Design system compliance score
 - Blockers or known issues
 - What engineering receives
+- UX acceptance criteria pass rate (from `ux-evaluation-report.json`, if present)
+- Brand compliance score (from `brand-compliance-report.json`, if present)
+- Any regressions found by ux-evaluator
 
 ## Output Format
 
@@ -283,6 +289,38 @@ Also write:
 - `delivery-package/TOKEN_COVERAGE.md` — token coverage report in Markdown
 - `delivery-package/CODE_CONNECT.md` — code-connect mapping in Markdown
 
+**HANDOFF.md additional sections** (append after the standard screen sequence and component inventory):
+
+If `ux-evaluation-report.json` is present:
+
+```
+## UX Acceptance Criteria
+
+| Screen | Emotion Target | Pass | Fail | Warn | Regressions |
+|--------|---------------|------|------|------|-------------|
+| [screen_id] | [emotion_target] | N | N | N | N |
+
+[If regressions exist:]
+### Regressions (require investigation before release)
+| Screen | Criterion | Likely Cause |
+|--------|-----------|--------------|
+| [screen_id] | [criterion] | [likely_cause] |
+```
+
+If `brand-compliance-report.json` is present:
+
+```
+## Brand Compliance
+**Score:** [brand_compliance_score]/100
+**Status:** [Compliant | Requires correction | Requires brand sign-off]
+
+[If findings exist:]
+### Brand Compliance Findings
+| Category | Screen | Severity | Description |
+|----------|--------|----------|-------------|
+| [category] | [screen_id] | [severity] | [description] |
+```
+
 ## Delivery Checklist Items
 Include these standard checks in `delivery_checklist`:
 1. All required screens designed and validated
@@ -295,6 +333,9 @@ Include these standard checks in `delivery_checklist`:
 8. Figma file organized with sections per flow
 9. Component manifest complete with all prop values
 10. Code-connect mapping produced
+11. UX acceptance criteria confirmed — ux-evaluator pass rate ≥ 90% (if ux-evaluation-report.json present; otherwise mark not_applicable with note "ux-evaluator did not run")
+12. Brand compliance check passed — brand-compliance-report score ≥ 80 (if brand-compliance-report.json present; otherwise mark not_applicable with note "brand-compliance-agent did not run")
+13. Navigation coherence check passed — no Category 9 errors in design-review.json (if design-review.json present; otherwise mark not_applicable with note "design-review-agent did not run or category 9 not evaluated")
 
 ## Rules
 - Write `run-history.json` first (append the new run snapshot) before any other output

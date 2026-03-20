@@ -1,0 +1,108 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "desirability-brief.schema.json",
+  "title": "Desirability Brief",
+  "description": "Written by creative-director alongside creative-direction.json. Captures per-screen emotional tone requirements and visual personality proxies. Read by brand-compliance-agent at Gate 4.",
+  "type": "object",
+  "required": ["meta", "per_screen", "brand_compliance_anchors"],
+  "properties": {
+    "meta": {
+      "type": "object",
+      "required": ["generated_at", "design_statement"],
+      "properties": {
+        "generated_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO 8601 timestamp"
+        },
+        "design_statement": {
+          "type": "string",
+          "description": "Reference or copy of creative-direction.json:meta.design_statement"
+        }
+      },
+      "additionalProperties": false
+    },
+    "per_screen": {
+      "type": "array",
+      "description": "One entry per screen with emotion target, visual tone proxies, and anti-patterns",
+      "items": {
+        "type": "object",
+        "required": ["screen_id", "emotion_target", "colour_personality_signal", "motion_register_required", "visual_tone_proxies", "anti_patterns"],
+        "properties": {
+          "screen_id": {
+            "type": "string",
+            "description": "Matches screen_id in ux-acceptance-brief.json"
+          },
+          "emotion_target": {
+            "type": "string",
+            "enum": ["delighted", "satisfied", "neutral"],
+            "description": "Copied from ux-acceptance-brief.json for this screen"
+          },
+          "colour_personality_signal": {
+            "type": "string",
+            "description": "What the creative direction implies for this emotion target on this screen"
+          },
+          "motion_register_required": {
+            "type": "string",
+            "enum": ["instant", "snappy", "smooth", "expressive"],
+            "description": "Required motion register. Screens with emotion_target=delighted must be smooth or expressive. Satisfied maps to snappy or smooth."
+          },
+          "visual_tone_proxies": {
+            "type": "array",
+            "description": "Token-level or structural signals that correlate with the emotion target",
+            "items": {
+              "type": "object",
+              "required": ["proxy", "rationale"],
+              "properties": {
+                "proxy": {
+                  "type": "string",
+                  "description": "A concrete visual or structural decision (e.g. 'Uses surface variant, not primary fill, for background')"
+                },
+                "rationale": {
+                  "type": "string",
+                  "description": "Why this proxy correlates with the emotion target"
+                }
+              },
+              "additionalProperties": false
+            },
+            "minItems": 1
+          },
+          "anti_patterns": {
+            "type": "array",
+            "description": "What would signal the wrong emotional tone on this screen",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "brand_compliance_anchors": {
+      "type": "object",
+      "required": ["primary_cta_token", "error_token", "headline_family", "approved_icon_family"],
+      "description": "Brand token anchors that brand-compliance-agent uses for emotional tone checks",
+      "properties": {
+        "primary_cta_token": {
+          "type": "string",
+          "description": "Token name for primary CTA colour (e.g. 'color.primary.default')"
+        },
+        "error_token": {
+          "type": "string",
+          "description": "Token name for error colour (e.g. 'color.error.default')"
+        },
+        "headline_family": {
+          "type": "string",
+          "description": "Headline font family name from creative-direction.json:typography.heading_family.name"
+        },
+        "approved_icon_family": {
+          "type": "string",
+          "description": "Approved icon library from creative-direction.json:iconography.library"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}
