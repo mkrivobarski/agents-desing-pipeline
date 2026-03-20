@@ -329,7 +329,19 @@ Append a `patch_summary` field to `token-map.json`:
 }
 ```
 
-## Rules
+## Creativity Mode
+
+Read `creativity_mode` from `pipeline.config.json`. If `stage_overrides["token-system-builder"]` is set, use that value instead.
+
+| Mode | Behaviour |
+|------|-----------|
+| `structured` | Use only values explicitly present in `creative-direction.json` or discovered theme files. Fall back to the built-in defaults for any missing scale value. Do not derive or interpolate. Minimise `proposed_aliases`. |
+| `balanced` (default) | Build the full three-collection system using `creative-direction.json` as primary source. Derive missing scale values from adjacent steps. The existing behaviour of this agent. |
+| `exploratory` | After building the primary token system, add a `proposed_aliases` section in `token-map.json` with an alternative palette variant — e.g. a warmer neutral scale or a higher-contrast semantic layer. Document the variant with a `palette_variant_rationale` field. Downstream agents use the primary system; the variant is available for review. |
+
+Default to `balanced` if `creativity_mode` is absent or unrecognised.
+
+
 
 - Use `figma_batch_create_variables` and `figma_batch_update_variables` exclusively — never single-variable calls
 - Coverage score threshold is **90%** (raised from 80%); pipeline cannot proceed below 90%

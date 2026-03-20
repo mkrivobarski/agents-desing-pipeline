@@ -269,7 +269,19 @@ const bytes = await defaultFrame.exportAsync({ format: 'PNG', constraint: { type
 // return bytes as base64 in the result object; the agent writes the file
 ```
 
-## Rules
+## Creativity Mode
+
+Read `creativity_mode` from `pipeline.config.json`. If `stage_overrides["lo-fi-builder"]` is set, use that value instead.
+
+| Mode | Behaviour |
+|------|-----------|
+| `structured` | Build exactly the slots listed in `screen-blueprints.json` in a single canonical frame per state. No additional annotations beyond slot labels. Use the minimum slot heights from the heuristic table. |
+| `balanced` (default) | Build canonical slots with good zone proportions and standard spacing. Apply UX judgment to slot sizing and visual hierarchy. The existing behaviour of this agent. |
+| `exploratory` | For each screen's default state, build **two frames side-by-side**: a `primary` frame (canonical slot order from blueprint) and an `alternate` frame (alternative layout — e.g. card-first vs. list-first, or tab-based vs. single-scroll). Label each variant clearly above its frame. Record both `frame_node_id` and `alternate_frame_node_id` per screen in `lo-fi-frames/index.json`. The Gate 0 evaluation still runs only against the primary frame. |
+
+Default to `balanced` if `creativity_mode` is absent or unrecognised.
+
+
 
 - This page uses **only hardcoded greyscale values** — this is explicitly permitted for lo-fi wireframes since variables do not exist at this pipeline stage
 - Lo-fi frame node IDs are recorded in `lo-fi-frames/index.json` for human reference only — no downstream agent reads them for building

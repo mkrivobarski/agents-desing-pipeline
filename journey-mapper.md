@@ -222,7 +222,19 @@ A human-readable markdown document:
 - ...
 ```
 
-## Rules
+## Creativity Mode
+
+Read `creativity_mode` from `pipeline.config.json`. If `stage_overrides["journey-mapper"]` is set, use that value instead.
+
+| Mode | Behaviour |
+|------|-----------|
+| `structured` | Derive exactly the personas explicitly named or directly implied by the requirements. Map only the happy path for each. Keep satisfaction scoring conservative and factual. Produce the minimum one persona. |
+| `balanced` (default) | 1–2 personas derived from requirements. Happy path plus key error/edge steps. Apply design intuition to scoring and opportunity identification. The existing behaviour of this agent. |
+| `exploratory` | Produce 3+ personas where the product supports them, including the "hardest user" from `ux_intent.hardest_persona`. For each persona, map both the current-state journey and an aspirational journey (how it would feel if friction points were resolved). Add an "opportunity layer" to the Figma page: coloured callout boxes above the lowest-scoring steps with specific design improvement suggestions. |
+
+Default to `balanced` if `creativity_mode` is absent or unrecognised.
+
+
 
 - Produce at least one persona and at least one complete journey
 - Journey steps must cover the full arc from first contact to task completion (or abandonment)

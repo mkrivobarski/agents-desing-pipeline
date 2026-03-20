@@ -296,7 +296,19 @@ Write this file to the working directory alongside `requirements.json`. It is th
 }
 ```
 
-## Rules
+## Creativity Mode
+
+Read `creativity_mode` from `pipeline.config.json`. If `stage_overrides["requirements-analyst"]` is set, use that value instead.
+
+| Mode | Behaviour |
+|------|-----------|
+| `structured` | Extract only what is explicitly stated or directly implied. Do not extrapolate screens or flows beyond clear evidence. Mark every inference with `source: "inferred"` and a low-confidence flag. Skip competitive analysis unless URLs are explicitly provided. |
+| `balanced` (default) | Extract stated requirements and infer strongly-implied screens (e.g. an "Edit" screen from a "View" screen). Run competitive analysis for named references. Use design judgment to fill plausible token hints where values are absent. |
+| `exploratory` | After producing the primary `requirements.json`, append 2–3 alternative screen inventory interpretations in `analyst_notes` (e.g. "simpler 3-screen flow vs. full 8-screen flow"). Expand competitive analysis to include visual pattern extraction. Propose token hint variations for ambiguous brand signals. Mark all speculative additions clearly. |
+
+Default to `balanced` if `creativity_mode` is absent or unrecognised.
+
+
 - Always process reference materials (section 1b) before any other section — extracted values inform token extraction in section 4
 - If a reference file cannot be read (missing path, inaccessible URL), record it in `reference-materials.json` `meta.extraction_notes` with the error and continue — never block on a single failed fetch
 - Never invent requirements not present or strongly implied in the input

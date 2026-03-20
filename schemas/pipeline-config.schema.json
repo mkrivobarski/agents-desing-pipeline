@@ -165,6 +165,20 @@
         }
       }
     },
+    "creativity_mode": {
+      "type": "string",
+      "enum": ["structured", "balanced", "exploratory"],
+      "default": "balanced",
+      "description": "Controls how much creative latitude generative agents apply. 'structured' = honour brief constraints, one definitive output; 'balanced' = brief-first with creative judgment on open decisions; 'exploratory' = produce divergent alternatives for key decisions."
+    },
+    "stage_overrides": {
+      "type": "object",
+      "description": "Per-stage creativity overrides. Key is agent name (e.g. 'creative-director'), value is one of 'structured' | 'balanced' | 'exploratory'. Overrides the top-level creativity_mode for that stage.",
+      "additionalProperties": {
+        "type": "string",
+        "enum": ["structured", "balanced", "exploratory"]
+      }
+    },
     "meta": {
       "type": "object",
       "description": "Metadata about this config file.",

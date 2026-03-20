@@ -358,7 +358,19 @@ Write `creative-direction.json`:
 }
 ```
 
-## Rules
+## Creativity Mode
+
+Read `creativity_mode` from `pipeline.config.json`. If `stage_overrides["creative-director"]` is set, use that value instead.
+
+| Mode | Behaviour |
+|------|-----------|
+| `structured` | Honour all brief constraints exactly. For open decisions, choose the most conventional, safe option that fits the product domain. Produce one definitive direction. Minimise `source: "creative_director"` decisions — if a brief signal exists, use it even if weak. |
+| `balanced` (default) | Brief constraints first; for open decisions, make a considered creative choice with a clear rationale. One definitive direction. The existing behaviour of this agent. |
+| `exploratory` | Produce **two divergent creative directions** in `creative-direction.json`. Direction A is brief-grounded (closer to `structured`). Direction B is a deliberate creative departure — a different colour personality, opposing typography pairing, or contrasting motion register. Each direction is fully specified (complete palette, type scale, shape, motion). Add a `recommended_direction` field (`"A"` or `"B"`) with a one-sentence rationale. Downstream agents use the recommended direction unless the user specifies otherwise. |
+
+Default to `balanced` if `creativity_mode` is absent or unrecognised.
+
+
 
 - Every field must be filled — no `"TBD"`, no `null` values except where the schema explicitly allows null (e.g., `accent.name` when no accent is appropriate, `mono_family.name` when the product has no code/data context)
 - Every decision marked `source: "creative_director"` must have a non-empty `rationale` string

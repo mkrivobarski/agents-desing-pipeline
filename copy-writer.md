@@ -156,7 +156,19 @@ When invoked with `patch_mode: true` (from `targeted-run-plan.json`):
 
 ---
 
-## Rules
+## Creativity Mode
+
+Read `creativity_mode` from `pipeline.config.json`. If `stage_overrides["copy-writer"]` is set, use that value instead.
+
+| Mode | Behaviour |
+|------|-----------|
+| `structured` | Generate the most direct, conventional copy for each slot. Button labels use imperative verb + object ("Save Changes"). Titles match screen names exactly. Minimal personality; no creative flair. Prioritise clarity over tone. |
+| `balanced` (default) | Tone-consistent, screen-aware copy using context signals in priority order. The existing behaviour of this agent. |
+| `exploratory` | For each placeholder or missing TEXT prop, generate **two copy options** in `copy-manifest.json`. Option A is direct/safe; Option B applies stronger brand voice and tone from `creative-direction.json`. Set `recommended_option` to `"A"` or `"B"` with a one-sentence rationale. `organism-manifest.json` is updated with the recommended option's value. |
+
+Default to `balanced` if `creativity_mode` is absent or unrecognised.
+
+
 
 - Never change a prop value already specified with real product-specific content
 - Never invent product names, company names, person names, or brand identifiers not present in `requirements.json`

@@ -150,6 +150,19 @@ Gate A: Present inferred screen list and flows. Ask for corrections.
 
 Gate B: Present full `requirements.json` summary. Ask "Ready to proceed with pipeline execution?"
 
+### Creativity Level (all modes except TARGETED)
+
+After completing mode-specific elicitation, ask — as part of the final question block:
+
+> "How much creative latitude should agents apply when making open design decisions?"
+> - `structured` — honour brief constraints strictly; one definitive output per stage; no elaboration beyond what is stated
+> - `balanced` (default) — brief-first with creative judgment on gaps and ambiguous decisions
+> - `exploratory` — produce divergent alternatives for key decisions (e.g. two creative directions, two wireframe layouts); recommend one
+
+If the user skips or says "default", use `balanced`. Optionally ask if any specific stage should differ (e.g. "strict on tokens, exploratory on creative direction"). Record per-stage overrides in `stage_overrides`.
+
+In **FAST**, **DELTA**, and **TARGETED** modes, do not ask — default to `"balanced"` unless `creativity_mode` is already set in `pipeline.config.json`.
+
 ### DELTA Mode (Prior run exists)
 Read `run-history.json` and the `prior_run_id` entry.
 
@@ -175,6 +188,8 @@ Write `pipeline.config.json` (updated with resolved values from elicitation):
 - Set `elicitation_mode` to the resolved mode
 - Set `adapter` to the resolved design system adapter (from Step 1c or elicitation; default `"fiori"`)
 - Set `access.figma_write_agents` to the default list unless overridden
+- Set `creativity_mode` to the elicited value (default `"balanced"`)
+- Set `stage_overrides` if the user specified per-stage overrides (omit if empty)
 - If DELTA mode, add `prior_run_id` and `screens_to_run`
 
 Write `requirements.json` skeleton (downstream requirements-analyst will enrich it):
@@ -202,6 +217,7 @@ Write `pipeline-intake.json` as the run initialization record:
     "success_emotion": "What a user should feel at the end (e.g. 'delighted — confident')",
     "hardest_persona": "1–2 sentence description of the most constrained user"
   },
+  "creativity_mode": "structured | balanced | exploratory",
   "intake_notes": []
 }
 ```
@@ -246,3 +262,4 @@ Agents that need to read the codebase may only do so if `access.codebase_access:
 - Write `pipeline-intake.json` after elicitation is complete
 - Write `requirements.json` skeleton last (it may be partial — requirements-analyst will complete it)
 - Never write files outside `working_dir`
+- Always elicit `creativity_mode` in FULL and SCAN modes; default to `"balanced"` in FAST, DELTA, and TARGETED modes

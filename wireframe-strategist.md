@@ -167,7 +167,19 @@ Write `screen-blueprints.json` with this structure:
 }
 ```
 
-## Rules
+## Creativity Mode
+
+Read `creativity_mode` from `pipeline.config.json`. If `stage_overrides["wireframe-strategist"]` is set, use that value instead.
+
+| Mode | Behaviour |
+|------|-----------|
+| `structured` | Define the minimum viable set of zones and slots per screen. One layout pattern per screen. Prioritise clarity and parsimony — do not add slots not directly required by the requirements. Set a conservative `max_cognitive_items` ceiling (≤ 5). |
+| `balanced` (default) | Define all necessary zones and slots using standard UX conventions. Apply good information hierarchy judgment. The existing behaviour of this agent. |
+| `exploratory` | For each screen, add a `layout_variants` array in `blueprint_notes` describing 1–2 alternative zone arrangements (e.g. "tab-based vs. single-scroll content"). Flag cognitive load trade-offs per variant. The primary blueprint remains the default; variants are advisory for `lo-fi-builder` and `component-architect`. |
+
+Default to `balanced` if `creativity_mode` is absent or unrecognised.
+
+
 - Output ONLY structure. Zero color, zero font names, zero brand language.
 - Every screen from requirements.json MUST have a blueprint — including all non-default states
 - Slot IDs must be globally unique within a screen (prefix with screen_id if needed)

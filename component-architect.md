@@ -357,7 +357,19 @@ Append a `patch_summary` field to both output files:
 }
 ```
 
-## Rules
+## Creativity Mode
+
+Read `creativity_mode` from `pipeline.config.json`. If `stage_overrides["component-architect"]` is set, use that value instead.
+
+| Mode | Behaviour |
+|------|-----------|
+| `structured` | Define the minimum required variant set per component. For interactive components: `Default`, `Hover`, `Pressed`, `Focused`, `Disabled` only — add `Loading`/`Error` only if the component is explicitly submit/validation-capable. Keep `props[]` lean. |
+| `balanced` (default) | Full interactive state coverage per spec. Apply `creative-direction.json` personality decisions to API contracts. The existing behaviour of this agent. |
+| `exploratory` | For each atom-tier component, add an `extended_variants` array in `resolver_notes` documenting 1–2 additional variant axes worth considering (e.g. an extra `Size` option, an icon-only variant, a branded accent variant). Mark these as advisory — `component-builder` builds only what is in `build_order`. Add a `variant_rationale` per extension explaining the UX case for it. |
+
+Default to `balanced` if `creativity_mode` is absent or unrecognised.
+
+
 
 - ALWAYS run the live Figma discovery query before writing either output file
 - If `requirements.json` specifies a `design_system`, run Phase 1.5 before gap analysis — never skip external evaluation when a system is declared
